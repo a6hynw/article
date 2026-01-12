@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Article Recommender</title>
+		<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+	</head>
+	<body class="bg-light">
+		<div class="container py-5">
+			<h1 class="mb-4">Article Recommender</h1>
+
+			{% if error %}
+				<div class="alert alert-danger" role="alert">
+					<pre style="white-space: pre-wrap;">{{ error }}</pre>
+				</div>
+			{% endif %}
+
+			<form method="post" class="mb-4">
+				<div class="mb-3">
+					<label for="query" class="form-label">Article ID or search text</label>
+					<input type="text" class="form-control" id="query" name="query" placeholder="Enter article id (e.g. 0) or some search text" value="{{ query or '' }}">
+				</div>
+				<div class="mb-3">
+					<label for="top_n" class="form-label">Number of results</label>
+					<input type="number" class="form-control" id="top_n" name="top_n" value="{{ top_n or 5 }}" min="1" max="50">
+				</div>
+				<button type="submit" class="btn btn-primary">Get Recommendations</button>
+			</form>
+
+			{% if sample_ids %}
+				<div class="mb-4">
+					<strong>Sample article IDs:</strong>
+					{% for sid in sample_ids %}
+						<span class="badge bg-secondary">{{ sid }}</span>
+					{% endfor %}
+				</div>
+			{% endif %}
+
+			{% if results %}
+				<h2>Results</h2>
+				<ul class="list-group">
+					{% for r in results %}
+						<li class="list-group-item">
+							<div class="d-flex w-100 justify-content-between">
+								<h5 class="mb-1">Article ID: {{ r.article_id }}</h5>
+								<small>Score: {{ r.similarity_score | round(3) }}</small>
+							</div>
+							<p class="mb-1">{{ r.content_preview }}</p>
+							<p class="mb-1"><strong>Summary:</strong> {{ r.summary }}</p>
+						</li>
+					{% endfor %}
+				</ul>
+			{% endif %}
+
+			<footer class="mt-5 text-muted">Run this app with <code>python app.py</code> from the project root.</footer>
+		</div>
+	</body>
+</html>
