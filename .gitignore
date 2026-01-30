@@ -1,0 +1,30 @@
+# Backend
+backend/__pycache__/
+backend/.venv/
+backend/venv/
+backend/*.egg-info/
+backend/.env
+backend/.env.local
+backend/data/processed/
+backend/*.pyc
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+.DS_Store
