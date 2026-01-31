@@ -114,20 +114,45 @@ def get_articles():
     """Get all articles or a sample of them"""
     try:
         load_data()
+        
+        # DEBUG: Print available categories to console
+        print(f"Loaded DataFrame categories: {ARTICLES_DF['category'].unique()}")
+        print(f"Total rows: {len(ARTICLES_DF)}")
+
         limit = request.args.get('limit', default=10, type=int)
-        articles = ARTICLES_DF.head(limit).copy()
+        category_filter = request.args.get('category')
+        
+        filtered_df = ARTICLES_DF
+        
+        if category_filter:
+            print(f"Filtering by category: {category_filter}")
+            # Filter by category (case-insensitive)
+            filtered_df = ARTICLES_DF[
+                ARTICLES_DF['category'].str.lower() == category_filter.lower()
+            ]
+            
+        if limit and limit > 0:
+            articles = filtered_df.head(limit).copy()
+        else:
+            articles = filtered_df.copy()
         
         # Add derived fields for frontend
         articles['id'] = articles['article_id']
         articles['title'] = articles['content'].str.split('\n').str[0].str[:80]
-        articles['imageUrl'] = 'https://images.unsplash.com/photo-1504711331062-f86b0b51b552?w=500&h=300&fit=crop'
+        articles['imageUrl'] = 'https://images.unsplash.com/photo-1617957796155-72d8717ac882?q=80&w=1632&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
         articles['author'] = 'BBC News'
-        articles['category'] = 'news'
+        # Ensure category is present (it should be)
+        if 'category' not in articles.columns:
+             articles['category'] = 'general'
+             
         articles['excerpt'] = articles['content'].str[:150]
         
         result = articles[['id', 'article_id', 'title', 'content', 'summary', 'imageUrl', 'author', 'category', 'excerpt']].to_dict(orient='records')
         return jsonify(result)
     except Exception as e:
+        print(f"Error in get_articles: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -167,7 +192,7 @@ def get_article(article_id):
         article_data['title'] = article_data['content'].split('\n')[0][:100]
         article_data['imageUrl'] = 'https://images.unsplash.com/photo-1504711331062-f86b0b51b552?w=800&h=400&fit=crop'
         article_data['author'] = 'BBC News'
-        article_data['category'] = 'news'
+        article_data['category'] = article['category']
         
         return jsonify(article_data)
     except Exception as e:
@@ -200,9 +225,9 @@ def get_recommendations(article_id):
                 article = ARTICLES_DF.iloc[article_idx[0]]
                 rec['id'] = rec['article_id']
                 rec['title'] = article['content'].split('\n')[0][:100]
-                rec['imageUrl'] = 'https://images.unsplash.com/photo-1504711331062-f86b0b51b552?w=500&h=300&fit=crop'
+                rec['imageUrl'] = 'https://images.unsplash.com/photo-1617957743103-310accdfb999?q=80&w=1632&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
                 rec['author'] = 'BBC News'
-                rec['category'] = 'news'
+                rec['category'] = article['category']
                 rec['excerpt'] = article['content'][:150]
             enhanced_results.append(rec)
         
@@ -215,7 +240,7 @@ def get_recommendations(article_id):
 def search_articles():
     """Search articles by text"""
     try:
-        load_data_and_model()
+        load_data()
         data = request.get_json()
         query = data.get('query', '').strip()
         top_n = data.get('top_n', 5)
@@ -223,7 +248,25 @@ def search_articles():
         if not query:
             return jsonify({"error": "Query is required"}), 400
             
-        results = RECOMMENDER.search_by_text(query, top_n=top_n)
+        # Use simple text search for now
+        print(f"Searching for: {query}")
+        # Search in content OR category OR title (splitting content)
+        # We'll prioritize content matches but this ensures if we search 'tech' we get tech articles
+        matching_articles = ARTICLES_DF[
+            ARTICLES_DF['content'].str.contains(query, case=False, na=False) |
+            ARTICLES_DF['category'].str.contains(query, case=False, na=False)
+        ].head(top_n)
+        
+        print(f"Found {len(matching_articles)} matching articles")
+        
+        results = []
+        for _, article in matching_articles.iterrows():
+            results.append({
+                "article_id": int(article["article_id"]),
+                "similarity_score": 0.5,  # dummy score
+                "content_preview": article["content"][:200] + "...",
+                "summary": article.get("summary", "Summary not available")
+            })
         
         # Enhance results with additional fields for frontend
         enhanced_results = []
@@ -233,14 +276,17 @@ def search_articles():
                 article = ARTICLES_DF.iloc[article_idx[0]]
                 rec['id'] = rec['article_id']
                 rec['title'] = article['content'].split('\n')[0][:100]
-                rec['imageUrl'] = 'https://images.unsplash.com/photo-1768675006364-a9286a8cb680?q=80&w=1169&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
+                rec['imageUrl'] = 'https://images.unsplash.com/photo-1504711331062-f86b0b51b552?w=500&h=300&fit=crop'
                 rec['author'] = 'BBC News'
-                rec['category'] = 'news'
+                rec['category'] = article['category']
                 rec['excerpt'] = article['content'][:150]
             enhanced_results.append(rec)
         
         return jsonify(enhanced_results)
     except Exception as e:
+        print(f"Search error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 

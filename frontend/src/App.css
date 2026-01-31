@@ -1,17 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
 
 @layer base {
   :root {
     /* Color Hunt Palette: https://colorhunt.co/palette/2e073f7a1cacad49e1ebd3f8 */
-    /* #EBD3F8 (Pale Purple) -> Background */
-    /* #AD49E1 (Light Purple) -> Secondary/Accent */
-    /* #7A1CAC (Vivid Purple) -> Primary */
-    /* #2E073F (Deep Purple) -> Foreground/Text */
-
+    /* ... variables ... */
     --background: 279 66% 90%;
     /* #EBD3F8 Pale Purple */
     --foreground: 283 80% 14%;
@@ -132,7 +125,7 @@
 
   .fade-in {
     animation: fadeIn 0.5s ease-out forwards;
-    opacity: 0;
+    /* Removed opacity: 0 to ensure visibility even if animation fails */
   }
 
   .slide-up {
