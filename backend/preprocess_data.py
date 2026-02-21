@@ -28,12 +28,44 @@ def preprocess_dataset():
     df = pd.read_csv(input_path)
     print(f"   ✅ Loaded {len(df)} articles")
 
-    # ✅ Correct column names for BBC dataset
-    # The provided BBC CSV uses 'text' for the article body
-    TITLE_COLUMN = None                  # No title column
-    CONTENT_COLUMN = "text"
-    SUMMARY_COLUMN = "text_rank_summary"  # Summary column
-    CATEGORY_COLUMN = None               # No category column
+    # Detect best matching columns for title, content, summary, category
+    CONTENT_COLUMN = None
+    TITLE_COLUMN = None
+    SUMMARY_COLUMN = None
+    CATEGORY_COLUMN = None
+
+    # common candidate names
+    content_candidates = ["text", "content", "article", "body"]
+    title_candidates = ["title", "headline", "name", "article_title", "heading"]
+    summary_candidates = ["text_rank_summary", "summary", "short_summary", "abstract"]
+    category_candidates = ["category", "categories", "labels", "topic", "section", "label", "tags"]
+
+    cols_lower = {c.lower(): c for c in df.columns}
+
+    for cand in content_candidates:
+        if cand in cols_lower:
+            CONTENT_COLUMN = cols_lower[cand]
+            break
+
+    for cand in title_candidates:
+        if cand in cols_lower:
+            TITLE_COLUMN = cols_lower[cand]
+            break
+
+    for cand in summary_candidates:
+        if cand in cols_lower:
+            SUMMARY_COLUMN = cols_lower[cand]
+            break
+
+    for cand in category_candidates:
+        if cand in cols_lower:
+            CATEGORY_COLUMN = cols_lower[cand]
+            break
+
+    # Fallback: require content column to exist
+    if CONTENT_COLUMN is None:
+        print("   ❌ No content column found. Available columns:", df.columns.tolist())
+        return
 
     # Verify content column
     print("\n2. Verifying columns...")
@@ -48,13 +80,58 @@ def preprocess_dataset():
     print("\n3. Handling missing values...")
     df[CONTENT_COLUMN] = df[CONTENT_COLUMN].fillna("")
 
+    # Ensure title/summary/category columns exist (create defaults if missing)
+    if TITLE_COLUMN is None:
+        # create title from first line / first 120 chars of content
+        df["title"] = df[CONTENT_COLUMN].astype(str).str.split('\n').str[0].str.strip().str[:120]
+        TITLE_COLUMN = "title"
+    else:
+        df[TITLE_COLUMN] = df[TITLE_COLUMN].fillna("").astype(str)
+
+    if SUMMARY_COLUMN is None:
+        # use a short excerpt as summary fallback
+        df["summary"] = df[CONTENT_COLUMN].astype(str).str[:200]
+        SUMMARY_COLUMN = "summary"
+    else:
+        df[SUMMARY_COLUMN] = df[SUMMARY_COLUMN].fillna("").astype(str)
+
+    if CATEGORY_COLUMN is None:
+        df["category"] = "general"
+        CATEGORY_COLUMN = "category"
+    else:
+        # Preserve original labels column name (may be 'labels')
+        df[CATEGORY_COLUMN] = df[CATEGORY_COLUMN].fillna("").astype(str)
+        # If the field is a labels-style list (comma-separated or bracketed), extract the first label for category
+        def first_label(val):
+            if not val:
+                return "general"
+            s = val
+            # remove surrounding brackets/quotes
+            s = s.strip()
+            if s.startswith("[") and s.endswith("]"):
+                s = s[1:-1]
+            # split on common separators
+            for sep in [",", ";", "|"]:
+                if sep in s:
+                    parts = [p.strip().strip("'\"") for p in s.split(sep) if p.strip()]
+                    return parts[0] if parts else "general"
+            # single value, strip quotes
+            return s.strip().strip("'\"") or "general"
+
+        # create/ensure a normalized `category` column that holds the primary label
+        df["category"] = df[CATEGORY_COLUMN].apply(first_label)
+        # keep original labels column if it's named differently
+        if CATEGORY_COLUMN != "category":
+            df["labels"] = df[CATEGORY_COLUMN]
+            CATEGORY_COLUMN = "labels"
+
     # Remove very short articles
     df = df[df[CONTENT_COLUMN].str.len() > 50]
     print(f"   ✅ Remaining articles: {len(df)}")
 
     # Use content as full text
     print("\n4. Preparing full text...")
-    df["full_text"] = df[CONTENT_COLUMN]
+    df["full_text"] = df[CONTENT_COLUMN].astype(str)
 
     # Initialize preprocessor
     print("\n5. Initializing text preprocessor...")
@@ -79,11 +156,17 @@ def preprocess_dataset():
     print(f"   ✅ Final dataset size: {len(df)}")
 
     # Add article ID
-    df["article_id"] = range(len(df))
+    df = df.reset_index(drop=True)
+    df["article_id"] = df.index.astype(int)
 
-    # Select final columns
-    df = df[["article_id", CONTENT_COLUMN, SUMMARY_COLUMN, "processed_content"]]
-    df = df.rename(columns={CONTENT_COLUMN: "content", SUMMARY_COLUMN: "summary"})
+    # Select final columns and ensure names are standardized
+    final_cols = ["article_id", CONTENT_COLUMN, SUMMARY_COLUMN, "processed_content", TITLE_COLUMN, CATEGORY_COLUMN]
+    # Deduplicate and keep order
+    seen = set()
+    final_cols = [c for c in final_cols if not (c in seen or seen.add(c))]
+
+    df = df[final_cols]
+    df = df.rename(columns={CONTENT_COLUMN: "content", SUMMARY_COLUMN: "summary", TITLE_COLUMN: "title", CATEGORY_COLUMN: "category"})
 
     # Save processed data
     print("\n8. Saving processed data...")

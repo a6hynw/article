@@ -4,7 +4,7 @@ import { ArticleCard } from './ArticleCard'
 import { CATEGORIES } from '@/utils/constants'
 import './ArticleView.css'
 
-export function ArticleView({ article, recommendations, onBack, onSelectArticle }) {
+export function ArticleView({ article, recommendations, recommendationsLoading, onBack, onSelectArticle }) {
   if (!article) return null
 
   const category = CATEGORIES.find((c) => c.id === article.category)
@@ -27,7 +27,7 @@ export function ArticleView({ article, recommendations, onBack, onSelectArticle 
   const author = article.author || 'Unknown Author'
   const imageUrl = article.imageUrl || 'https://images.unsplash.com/photo-1504711331062-f86b0b51b552?w=800&h=400&fit=crop'
   const summary = article.summary || ''
-  const readTime = article.readTime || Math.ceil((content.length || 0) / 200)
+  const readTime = article.readTime || Math.max(1, Math.ceil((content.length || 0) / 200))
 
   return (
     <div className="min-h-screen bg-[#F0F4F3]">
@@ -145,38 +145,57 @@ export function ArticleView({ article, recommendations, onBack, onSelectArticle 
         </article>
 
         {/* Recommendations Sidebar */}
-        {recommendations && recommendations.length > 0 && (
+        {(recommendationsLoading || (recommendations && recommendations.length > 0)) && (
           <aside className="lg:sticky lg:top-24 lg:self-start">
             <div className="bg-white/70 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-[#5C8374]/20 mb-6">
-              <div className="flex items-center gap-2 mb-6">
+              <div className="flex items-center gap-2 mb-4">
                 <div className="w-1 h-6 bg-gradient-to-b from-[#5C8374] to-[#93B1A6] rounded-full" />
                 <h2 className="text-xl font-bold text-[#183D3D]" style={{ fontFamily: 'Georgia, serif' }}>
                   Recommended for you
                 </h2>
               </div>
 
-              <p className="text-sm text-[#183D3D]/60 mb-6 leading-relaxed">
+              <p className="text-sm text-[#183D3D]/60 mb-5 leading-relaxed">
                 Based on content similarity using TF-IDF analysis
               </p>
 
-              <div className="space-y-3">
-                {recommendations.slice(0, 3).map((rec, index) => (
-                  <div
-                    key={rec.id || rec.article_id || index}
-                    className="fade-in"
-                    style={{ animationDelay: `${index * 0.1}s` }}
-                  >
-                    <ArticleCard
-                      article={rec}
-                      onClick={() => onSelectArticle(rec)}
-                      variant="compact"
-                    />
-                  </div>
-                ))}
-              </div>
+              {/* Loading skeleton */}
+              {recommendationsLoading && (
+                <div className="space-y-3">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="flex gap-3 p-3 rounded-lg bg-white/50">
+                      <div className="w-16 h-16 rounded-lg bg-[#5C8374]/10 animate-pulse flex-shrink-0" />
+                      <div className="flex-1 space-y-2 pt-1">
+                        <div className="h-3 bg-[#5C8374]/10 rounded animate-pulse w-full" />
+                        <div className="h-3 bg-[#5C8374]/10 rounded animate-pulse w-3/4" />
+                        <div className="h-3 bg-[#5C8374]/10 rounded animate-pulse w-1/2 mt-2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Actual recommendation cards */}
+              {!recommendationsLoading && (
+                <div className="space-y-3">
+                  {recommendations.slice(0, 4).map((rec, index) => (
+                    <div
+                      key={rec.id || rec.article_id || index}
+                      className="fade-in"
+                      style={{ animationDelay: `${index * 0.1}s` }}
+                    >
+                      <ArticleCard
+                        article={rec}
+                        onClick={() => onSelectArticle(rec)}
+                        variant="compact"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Additional Info Card */}
+            {/* Category info card */}
             {category && (
               <div className="bg-gradient-to-br from-[#183D3D] to-[#0a2626] rounded-xl p-6 shadow-lg border border-[#5C8374]/30">
                 <div className="flex items-center gap-2 mb-4">
@@ -188,7 +207,10 @@ export function ArticleView({ article, recommendations, onBack, onSelectArticle 
                 <p className="text-sm text-[#93B1A6]/80 leading-relaxed">
                   Explore more articles in {category.label} to deepen your knowledge and stay updated.
                 </p>
-                <button className="mt-4 w-full px-4 py-2 bg-[#5C8374] hover:bg-[#4a6b5f] text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-md hover:shadow-lg">
+                <button
+                  onClick={onBack}
+                  className="mt-4 w-full px-4 py-2 bg-[#5C8374] hover:bg-[#4a6b5f] text-white rounded-lg text-sm font-semibold transition-all duration-200 shadow-md hover:shadow-lg"
+                >
                   Explore {category.label}
                 </button>
               </div>

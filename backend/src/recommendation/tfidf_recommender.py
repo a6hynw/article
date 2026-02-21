@@ -8,9 +8,14 @@ import pickle
 import os
 
 # --- Path setup ---
+# ROOT_DIR should point to the backend directory (two levels above this file:
+# recommendation -> src -> backend). Use parents[2] so ROOT_DIR resolves to
+# the `backend` folder and data/src imports work correctly when running the app
+# from the repository root or from the backend folder.
 ROOT_DIR = Path(__file__).resolve().parents[2]
 SRC_DIR = ROOT_DIR / "src"
-sys.path.insert(0, str(SRC_DIR))
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 from preprocessing.preprocess import TextPreprocessor
 
@@ -41,24 +46,47 @@ class TFIDFRecommender:
 
         self.articles_df = articles_df.reset_index(drop=True)
 
+        # Ensure processed_content exists; if not, try to create from `content`
+        if "processed_content" not in self.articles_df.columns:
+            print("processed_content column missing; attempting to create from 'content' using TextPreprocessor...")
+            preproc = TextPreprocessor()
+            if "content" not in self.articles_df.columns:
+                raise ValueError("No 'processed_content' or 'content' column found in articles_df")
+            self.articles_df["processed_content"] = self.articles_df["content"].fillna("").astype(str).map(preproc.preprocess)
+
         print(f"\n1. Processing {len(self.articles_df)} articles...")
 
         print("\n2. Creating TF-IDF vectors...")
-        self.tfidf_matrix = self.vectorizer.fit_transform(
-            self.articles_df["processed_content"]
-        )
+        texts = self.articles_df["processed_content"].fillna("").astype(str).tolist()
+        if len(texts) == 0:
+            raise ValueError("No texts available to fit TF-IDF vectorizer")
+
+        self.tfidf_matrix = self.vectorizer.fit_transform(texts)
 
         print(f"   ✅ TF-IDF matrix shape: {self.tfidf_matrix.shape}")
 
         print("\n3. Calculating cosine similarity...")
-        self.similarity_matrix = cosine_similarity(self.tfidf_matrix)
+        # Compute cosine similarity (may be memory heavy for large corpora)
+        try:
+            self.similarity_matrix = cosine_similarity(self.tfidf_matrix)
+        except Exception as e:
+            print(f"Error computing similarity matrix: {e}")
+            self.similarity_matrix = None
 
         print("\n✅ MODEL TRAINING COMPLETE!")
         return self
 
     def get_recommendations(self, article_id, top_n=10):
+        if self.articles_df is None:
+            print("❌ Recommender has not been fitted yet")
+            return []
+
         if article_id not in self.articles_df["article_id"].values:
             print(f"❌ Article ID {article_id} not found")
+            return []
+
+        if self.similarity_matrix is None:
+            print("❌ Similarity matrix not available; ensure fit() completed successfully")
             return []
 
         article_idx = self.articles_df[
@@ -83,6 +111,10 @@ class TFIDFRecommender:
     def search_by_text(self, text, top_n=10):
         preprocessor = TextPreprocessor()
         processed_text = preprocessor.preprocess(text)
+
+        if self.tfidf_matrix is None or self.vectorizer is None:
+            print("❌ Model not fitted; search_by_text requires a fitted model")
+            return []
 
         text_vector = self.vectorizer.transform([processed_text])
         similarities = cosine_similarity(text_vector, self.tfidf_matrix)[0]

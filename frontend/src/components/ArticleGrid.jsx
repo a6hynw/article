@@ -1,6 +1,6 @@
 import { ArticleCard } from './ArticleCard'
 
-export function ArticleGrid({ articles, onSelectArticle, loading = false }) {
+export function ArticleGrid({ articles, onSelectArticle, loading = false, highlightQuery = '' }) {
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-6 py-24">
@@ -54,6 +54,7 @@ export function ArticleGrid({ articles, onSelectArticle, loading = false }) {
             <ArticleCard
               article={article}
               onClick={() => onSelectArticle(article)}
+              highlightQuery={highlightQuery}
             />
           </div>
         ))}

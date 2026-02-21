@@ -1,7 +1,23 @@
 import { Clock, ArrowRight, Bookmark } from 'lucide-react'
 import { CATEGORIES } from '@/utils/constants'
 
-export function ArticleCard({ article, onClick, variant = 'default' }) {
+// Splits `text` on matching `query` and wraps matches in an underlined teal span
+function HighlightedText({ text, query }) {
+    if (!query || !text) return <>{text}</>
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+    const parts = text.split(regex)
+    return (
+        <>
+            {parts.map((part, i) =>
+                regex.test(part)
+                    ? <span key={i} className="underline decoration-[#5C8374] decoration-2 text-[#183D3D] font-semibold bg-[#5C8374]/10 rounded px-0.5">{part}</span>
+                    : <span key={i}>{part}</span>
+            )}
+        </>
+    )
+}
+
+export function ArticleCard({ article, onClick, variant = 'default', highlightQuery = '' }) {
     // Get category from categories list or use article.category directly
     let category = null
     if (CATEGORIES && CATEGORIES.length > 0) {
@@ -69,7 +85,7 @@ export function ArticleCard({ article, onClick, variant = 'default' }) {
                                 lineHeight: '1.4em',
                                 maxHeight: '2.8em'
                             }}>
-                            {title}
+                            <HighlightedText text={title} query={highlightQuery} />
                         </h4>
 
                         <div className="flex items-center gap-2 mt-2 text-xs text-[#183D3D]/60">
@@ -122,7 +138,7 @@ export function ArticleCard({ article, onClick, variant = 'default' }) {
                     maxHeight: '2.8em',
                     overflow: 'hidden'
                 }}>
-                    {title}
+                    <HighlightedText text={title} query={highlightQuery} />
                 </h3>
 
                 <p className="text-[#183D3D]/70 text-sm leading-relaxed"
@@ -134,7 +150,7 @@ export function ArticleCard({ article, onClick, variant = 'default' }) {
                         maxHeight: '2.8em',
                         overflow: 'hidden'
                     }}>
-                    {excerpt}
+                    <HighlightedText text={excerpt} query={highlightQuery} />
                 </p>
 
                 <div className="flex items-center justify-between pt-2">

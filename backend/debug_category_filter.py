@@ -18,6 +18,12 @@ def test_category(cat):
     except Exception as e:
         print(f"Connection failed: {e}")
 
+if __name__ == '__main__':
+    print("Testing Category API...")
+    test_category("tech")
+    test_category("sport")
+    test_category("business")
+    test_category("fake_category")
 print("Testing Category API...")
 test_category("tech")
 test_category("sport")

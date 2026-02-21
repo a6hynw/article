@@ -3,7 +3,6 @@ from flask import Flask, render_template, request, jsonify
 import pandas as pd
 import traceback
 from flask_cors import CORS
-
 ROOT_DIR = Path(__file__).resolve().parent
 
 
@@ -29,6 +28,77 @@ RECOMMENDER = None
 ARTICLES_DF = None
 
 
+class SimpleRecommender:
+    """Lightweight fallback recommender used when the TF-IDF model
+    can't be imported or fails to load. Returns same-category articles
+    or a simple content-based search result so the frontend still shows
+    recommendation cards.
+    """
+    def __init__(self, articles_df=None):
+        self.articles_df = articles_df
+
+    def fit(self, articles_df):
+        self.articles_df = articles_df
+        return self
+
+    def get_recommendations(self, article_id, top_n=10):
+        if self.articles_df is None:
+            return []
+
+        try:
+            base = self.articles_df[self.articles_df['article_id'] == article_id]
+            if base.empty:
+                return []
+            category = base.iloc[0].get('category', None)
+        except Exception:
+            return []
+
+        if category:
+            candidates = self.articles_df[self.articles_df['category'] == category]
+            candidates = candidates[candidates['article_id'] != article_id]
+        else:
+            candidates = self.articles_df[self.articles_df['article_id'] != article_id]
+
+        # If not enough same-category items, pad with other articles
+        if len(candidates) < top_n:
+            others = self.articles_df[self.articles_df['article_id'] != article_id]
+            candidates = pd.concat([candidates, others]).drop_duplicates('article_id')
+
+        # Take a deterministic slice to keep results stable
+        candidates = candidates.head(top_n)
+
+        results = []
+        for _, row in candidates.iterrows():
+            results.append({
+                'article_id': int(row['article_id']),
+                'similarity_score': 0.0,
+                'content_preview': str(row.get('content', ''))[:200] + '...',
+                'summary': row.get('summary', 'Summary not available')
+            })
+
+        return results
+
+    def search_by_text(self, text, top_n=10):
+        if self.articles_df is None or not text:
+            return []
+
+        matches = self.articles_df[
+            self.articles_df['content'].str.contains(text, case=False, na=False) |
+            self.articles_df['category'].str.contains(text, case=False, na=False)
+        ].head(top_n)
+
+        results = []
+        for _, row in matches.iterrows():
+            results.append({
+                'article_id': int(row['article_id']),
+                'similarity_score': 0.0,
+                'content_preview': str(row.get('content', ''))[:200] + '...',
+                'summary': row.get('summary', 'Summary not available')
+            })
+
+        return results
+
+
 def load_data_and_model():
     global RECOMMENDER, ARTICLES_DF
 
@@ -44,9 +114,16 @@ def load_data_and_model():
 
     # Then try to import/fit the recommender; if it fails, leave RECOMMENDER as None
     if RECOMMENDER is None:
-        TFIDFRecommender = import_recommender()
-        RECOMMENDER = TFIDFRecommender()
-        RECOMMENDER.fit(ARTICLES_DF)
+        try:
+            TFIDFRecommender = import_recommender()
+            RECOMMENDER = TFIDFRecommender()
+            RECOMMENDER.fit(ARTICLES_DF)
+        except Exception as e:
+            # If the TF-IDF recommender can't be imported or fails to fit,
+            # fall back to a lightweight recommender so the frontend still
+            # receives recommendation cards.
+            print(f"Warning: TF-IDF recommender unavailable, using fallback. Error: {e}")
+            RECOMMENDER = SimpleRecommender(ARTICLES_DF).fit(ARTICLES_DF)
 
 
 def load_data():
@@ -67,20 +144,14 @@ def index():
     query = None
     top_n = 5
 
-    # Try to lazily load data first; then attempt to load the model.
+    # Lazily load data and model together; load_data_and_model() already
+    # calls load_data() internally so we only need one call here.
     try:
-        load_data()
+        load_data_and_model()
     except Exception as e:
-        error = f"Data load error: {e}"
+        error = f"Load error: {e}"
         error += "\n" + traceback.format_exc()
 
-    # Attempt to load the recommender but don't fail the page if it errors
-    if error is None:
-        try:
-            load_data_and_model()
-        except Exception as e:
-            error = f"Model load error: {e}"
-            error += "\n" + traceback.format_exc()
 
     if request.method == "POST" and error is None:
         query = request.form.get("query", "").strip()
@@ -126,10 +197,18 @@ def get_articles():
         
         if category_filter:
             print(f"Filtering by category: {category_filter}")
-            # Filter by category (case-insensitive)
-            filtered_df = ARTICLES_DF[
-                ARTICLES_DF['category'].str.lower() == category_filter.lower()
-            ]
+            # Filter by category (case-insensitive). If a `labels` column exists, check it too.
+            cf = category_filter.lower()
+            if 'labels' in ARTICLES_DF.columns:
+                # match if any label contains the filter token
+                filtered_df = ARTICLES_DF[
+                    ARTICLES_DF['labels'].str.lower().str.contains(cf, na=False) |
+                    ARTICLES_DF['category'].str.lower().eq(cf)
+                ]
+            else:
+                filtered_df = ARTICLES_DF[
+                    ARTICLES_DF['category'].str.lower() == cf
+                ]
             
         if limit and limit > 0:
             articles = filtered_df.head(limit).copy()
@@ -137,21 +216,26 @@ def get_articles():
             articles = filtered_df.copy()
         
         # Add derived fields for frontend
-        articles['id'] = articles['article_id']
-        articles['title'] = articles['content'].str.split('\n').str[0].str[:80]
+        articles['id'] = articles['article_id'].astype(int)
+        # Guard against NaN content before chaining string operations
+        safe_content = articles['content'].fillna('')
+        articles['title'] = safe_content.str.split('\n').str[0].str[:80]
         articles['imageUrl'] = 'https://images.unsplash.com/photo-1617957796155-72d8717ac882?q=80&w=1632&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
         articles['author'] = 'BBC News'
         # Ensure category is present (it should be)
         if 'category' not in articles.columns:
-             articles['category'] = 'general'
-             
-        articles['excerpt'] = articles['content'].str[:150]
+            articles['category'] = 'general'
+
+        articles['excerpt'] = safe_content.str[:150]
         
-        result = articles[['id', 'article_id', 'title', 'content', 'summary', 'imageUrl', 'author', 'category', 'excerpt']].to_dict(orient='records')
+        # Prefer to include labels in the API output when available
+        out_cols = ['id', 'article_id', 'title', 'content', 'summary', 'imageUrl', 'author', 'category', 'excerpt']
+        if 'labels' in articles.columns:
+            out_cols.append('labels')
+        result = articles[out_cols].to_dict(orient='records')
         return jsonify(result)
     except Exception as e:
         print(f"Error in get_articles: {e}")
-        import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
@@ -166,14 +250,11 @@ def get_article(article_id):
     try:
         load_data()
 
-        # Try to coerce article_id to an integer indexable value
+        # Try to coerce article_id to an integer indexable value.
+        # int(float(x)) handles '0', '0.0', '42.0', etc. uniformly.
         try:
-            # handle values like '0', '0.0', 0.0
-            if isinstance(article_id, str) and article_id.endswith('.0'):
-                article_id_int = int(float(article_id))
-            else:
-                article_id_int = int(float(article_id))
-        except Exception:
+            article_id_int = int(float(article_id))
+        except (ValueError, TypeError):
             # fallback: compare as raw string
             article_id_int = None
 
@@ -186,13 +267,14 @@ def get_article(article_id):
             return jsonify({"error": "Article not found"}), 404
         
         article_data = article.to_dict(orient='records')[0]
-        
+
         # Add derived fields for frontend
-        article_data['id'] = article_data['article_id']
-        article_data['title'] = article_data['content'].split('\n')[0][:100]
+        article_data['id'] = article_data.get('article_id')
+        article_data['title'] = article_data.get('content', '').split('\n')[0][:100]
         article_data['imageUrl'] = 'https://images.unsplash.com/photo-1504711331062-f86b0b51b552?w=800&h=400&fit=crop'
         article_data['author'] = 'BBC News'
-        article_data['category'] = article['category']
+        # article above is a DataFrame slice; prefer the already-extracted value
+        article_data['category'] = article_data.get('category', 'general')
         
         return jsonify(article_data)
     except Exception as e:
@@ -204,7 +286,7 @@ def get_recommendations(article_id):
     """Get recommendations for a specific article. Accept non-integer URL ids and coerce."""
     try:
         load_data_and_model()
-        top_n = request.args.get('top_n', default=5, type=int)
+        top_n = request.args.get('top_n', default=6, type=int)
 
         # coerce similar to get_article
         try:
@@ -216,19 +298,43 @@ def get_recommendations(article_id):
             return jsonify({"error": "Invalid article id"}), 400
 
         results = RECOMMENDER.get_recommendations(article_id_int, top_n=top_n)
-        
-        # Enhance results with additional fields for frontend
+
+        # Enhance results with additional fields for frontend; be defensive
         enhanced_results = []
         for rec in results:
-            article_idx = ARTICLES_DF[ARTICLES_DF['article_id'] == rec['article_id']].index
+            # ensure rec is a dict
+            if not isinstance(rec, dict):
+                continue
+
+            # prefer explicit article_id field but accept id; normalise to int
+            raw_id = rec.get('article_id') or rec.get('id')
+            try:
+                rec_article_id = int(raw_id) if raw_id is not None else None
+            except (ValueError, TypeError):
+                rec_article_id = None
+            rec['article_id'] = rec_article_id
+            rec['id'] = rec_article_id
+
+            # Cast the DataFrame column to int for a reliable comparison
+            if rec_article_id is not None:
+                article_idx = ARTICLES_DF[
+                    ARTICLES_DF['article_id'].astype(int) == rec_article_id
+                ].index
+            else:
+                article_idx = []
+
             if len(article_idx) > 0:
                 article = ARTICLES_DF.iloc[article_idx[0]]
-                rec['id'] = rec['article_id']
-                rec['title'] = article['content'].split('\n')[0][:100]
+                raw_content = article['content'] if 'content' in article.index else None
+                safe_content = str(raw_content) if (raw_content is not None and pd.notna(raw_content)) else ''
+                rec['title'] = safe_content.split('\n')[0][:100] if safe_content else 'Untitled'
                 rec['imageUrl'] = 'https://images.unsplash.com/photo-1617957743103-310accdfb999?q=80&w=1632&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
                 rec['author'] = 'BBC News'
-                rec['category'] = article['category']
-                rec['excerpt'] = article['content'][:150]
+                raw_cat = article['category'] if 'category' in article.index else None
+                rec['category'] = str(raw_cat) if (raw_cat is not None and pd.notna(raw_cat)) else 'general'
+                rec['excerpt'] = safe_content[:150] if safe_content else ''
+                rec['content'] = safe_content
+
             enhanced_results.append(rec)
         
         return jsonify(enhanced_results)
@@ -242,50 +348,58 @@ def search_articles():
     try:
         load_data()
         data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON body"}), 400
         query = data.get('query', '').strip()
-        top_n = data.get('top_n', 5)
-        
+        top_n = int(data.get('top_n', 5))
+
         if not query:
             return jsonify({"error": "Query is required"}), 400
-            
-        # Use simple text search for now
+
         print(f"Searching for: {query}")
-        # Search in content OR category OR title (splitting content)
-        # We'll prioritize content matches but this ensures if we search 'tech' we get tech articles
-        matching_articles = ARTICLES_DF[
+        raw_matches = ARTICLES_DF[
             ARTICLES_DF['content'].str.contains(query, case=False, na=False) |
             ARTICLES_DF['category'].str.contains(query, case=False, na=False)
-        ].head(top_n)
-        
+        ]
+        # top_n=0 means no limit; otherwise apply the cap
+        matching_articles = raw_matches if top_n <= 0 else raw_matches.head(top_n)
+
         print(f"Found {len(matching_articles)} matching articles")
-        
-        results = []
-        for _, article in matching_articles.iterrows():
-            results.append({
-                "article_id": int(article["article_id"]),
-                "similarity_score": 0.5,  # dummy score
-                "content_preview": article["content"][:200] + "...",
-                "summary": article.get("summary", "Summary not available")
-            })
-        
-        # Enhance results with additional fields for frontend
+
+        # Build enriched results in a single pass — no redundant second loop
         enhanced_results = []
-        for rec in results:
-            article_idx = ARTICLES_DF[ARTICLES_DF['article_id'] == rec['article_id']].index
-            if len(article_idx) > 0:
-                article = ARTICLES_DF.iloc[article_idx[0]]
-                rec['id'] = rec['article_id']
-                rec['title'] = article['content'].split('\n')[0][:100]
-                rec['imageUrl'] = 'https://images.unsplash.com/photo-1504711331062-f86b0b51b552?w=500&h=300&fit=crop'
-                rec['author'] = 'BBC News'
-                rec['category'] = article['category']
-                rec['excerpt'] = article['content'][:150]
-            enhanced_results.append(rec)
-        
+        for _, row in matching_articles.iterrows():
+            try:
+                art_id = int(row['article_id'])
+            except (ValueError, TypeError):
+                continue
+
+            raw_content = row['content'] if 'content' in row.index else None
+            safe_content = str(raw_content) if (raw_content is not None and pd.notna(raw_content)) else ''
+
+            raw_cat = row['category'] if 'category' in row.index else None
+            safe_cat = str(raw_cat) if (raw_cat is not None and pd.notna(raw_cat)) else 'general'
+
+            raw_summary = row['summary'] if 'summary' in row.index else None
+            safe_summary = str(raw_summary) if (raw_summary is not None and pd.notna(raw_summary)) else 'Summary not available'
+
+            enhanced_results.append({
+                'id': art_id,
+                'article_id': art_id,
+                'similarity_score': 0.5,
+                'title': safe_content.split('\n')[0][:100] if safe_content else 'Untitled',
+                'content': safe_content,
+                'content_preview': safe_content[:200] + '...' if safe_content else '',
+                'excerpt': safe_content[:150],
+                'summary': safe_summary,
+                'imageUrl': 'https://images.unsplash.com/photo-1504711331062-f86b0b51b552?w=500&h=300&fit=crop',
+                'author': 'BBC News',
+                'category': safe_cat,
+            })
+
         return jsonify(enhanced_results)
     except Exception as e:
         print(f"Search error: {e}")
-        import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 

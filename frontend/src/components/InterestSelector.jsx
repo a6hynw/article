@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Sparkles, ArrowRight, Check } from 'lucide-react';
 import './InterestSelector.css';
 
-export function InterestSelector({ onComplete }) {
-  const [selected, setSelected] = useState([]);
+export function InterestSelector({ onComplete, defaultSelected = [] }) {
+  const [selected, setSelected] = useState(defaultSelected);
 
   const toggleInterest = (id) => {
     setSelected((prev) =>
