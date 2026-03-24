@@ -1,5 +1,7 @@
 {
-  "devDependencies": {
-    "eslint": "^9.0.0"
+  "name": "article-ai-root",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build"
   }
 }
