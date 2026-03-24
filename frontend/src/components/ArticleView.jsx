@@ -1,11 +1,69 @@
-import { ArrowLeft, Calendar, Clock, Share2, Bookmark } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { ArrowLeft, Calendar, Clock, Share2, Bookmark, BookmarkCheck, Check } from 'lucide-react'
 import { Button } from './ui/button'
 import { ArticleCard } from './ArticleCard'
 import { CATEGORIES } from '@/utils/constants'
-import './ArticleView.css'
+
+
+// Bookmark helpers (localStorage)
+const BOOKMARKS_KEY = 'article-ai-bookmarks'
+function getBookmarks() {
+  try { return JSON.parse(localStorage.getItem(BOOKMARKS_KEY) || '[]') } catch { return [] }
+}
+function saveBookmarks(ids) {
+  localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(ids))
+}
 
 export function ArticleView({ article, recommendations, recommendationsLoading, onBack, onSelectArticle }) {
   if (!article) return null
+
+  const articleId = article.article_id || article.id
+  const [bookmarked, setBookmarked] = useState(() => getBookmarks().includes(articleId))
+  const [copied, setCopied] = useState(false)
+
+  // Sync bookmark icon when article changes
+  useEffect(() => {
+    setBookmarked(getBookmarks().includes(article.article_id || article.id))
+  }, [article])
+
+  const handleBookmark = () => {
+    const id = article.article_id || article.id
+    const saved = getBookmarks()
+    if (saved.includes(id)) {
+      saveBookmarks(saved.filter(b => b !== id))
+      setBookmarked(false)
+    } else {
+      saveBookmarks([...saved, id])
+      setBookmarked(true)
+    }
+  }
+
+  const handleShare = async () => {
+    const shareData = {
+      title: article.title || 'Article',
+      text: article.summary || article.excerpt || '',
+      url: window.location.href,
+    }
+    if (navigator.share) {
+      try { await navigator.share(shareData) } catch { /* user cancelled */ }
+    } else {
+      try {
+        await navigator.clipboard.writeText(window.location.href)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      } catch {
+        // final fallback: select a temporary input
+        const el = document.createElement('input')
+        el.value = window.location.href
+        document.body.appendChild(el)
+        el.select()
+        document.execCommand('copy')
+        document.body.removeChild(el)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
+    }
+  }
 
   const category = CATEGORIES.find((c) => c.id === article.category)
 
@@ -42,13 +100,31 @@ export function ArticleView({ article, recommendations, recommendationsLoading, 
             Back
           </button>
 
-          <div className="flex items-center gap-2">
-            <button className="p-2 rounded-lg hover:bg-[#5C8374]/10 transition-all duration-300 text-[#183D3D] hover:text-[#5C8374]">
-              <Bookmark className="w-5 h-5" />
+          <div className="flex items-center gap-2 relative">
+            <button
+              onClick={handleBookmark}
+              title={bookmarked ? 'Remove bookmark' : 'Bookmark article'}
+              className={`p-2 rounded-lg transition-all duration-300 ${bookmarked
+                ? 'bg-[#5C8374] text-white hover:bg-[#183D3D]'
+                : 'hover:bg-[#5C8374]/10 text-[#183D3D] hover:text-[#5C8374]'
+                }`}
+            >
+              {bookmarked
+                ? <BookmarkCheck className="w-5 h-5" />
+                : <Bookmark className="w-5 h-5" />}
             </button>
-            <button className="p-2 rounded-lg hover:bg-[#5C8374]/10 transition-all duration-300 text-[#183D3D] hover:text-[#5C8374]">
-              <Share2 className="w-5 h-5" />
+            <button
+              onClick={handleShare}
+              title="Share article"
+              className="p-2 rounded-lg hover:bg-[#5C8374]/10 transition-all duration-300 text-[#183D3D] hover:text-[#5C8374] relative"
+            >
+              {copied ? <Check className="w-5 h-5 text-green-600" /> : <Share2 className="w-5 h-5" />}
             </button>
+            {copied && (
+              <span className="absolute right-0 top-10 whitespace-nowrap bg-[#183D3D] text-white text-xs px-3 py-1.5 rounded-lg shadow-lg z-10">
+                Link copied!
+              </span>
+            )}
           </div>
         </div>
       </header>

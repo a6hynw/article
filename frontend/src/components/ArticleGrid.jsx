@@ -48,8 +48,8 @@ export function ArticleGrid({ articles, onSelectArticle, loading = false, highli
         {articles.map((article, index) => (
           <div
             key={`${article.id || article.article_id}-${index}`}
-            className="fade-in"
-            style={{ animationDelay: `${index * 0.08}s` }}
+            className="opacity-0 animate-[scale-fade-up_0.6s_ease-out_forwards]"
+            style={{ animationDelay: `${index * 0.1}s` }}
           >
             <ArticleCard
               article={article}
@@ -60,8 +60,18 @@ export function ArticleGrid({ articles, onSelectArticle, loading = false, highli
         ))}
       </div>
 
-      {/* Custom Animations */}
-
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes scale-fade-up {
+          0% {
+            opacity: 0;
+            transform: translateY(40px) scale(0.95);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+      `}} />
     </div>
   )
 }

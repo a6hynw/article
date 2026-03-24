@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 # Load the dataset
 print("Loading dataset...")
 df = pd.read_csv(
-    r"C:\Users\LENOVO\Downloads\bbc_news_text_complexity_summarization.csv"
+    r"C:\Users\TUF\Documents\article\backend\data\raw\bbc_news_text_complexity_summarization.csv"
 )
 
 # Display basic information

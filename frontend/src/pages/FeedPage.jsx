@@ -1,5 +1,5 @@
-
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   getRecommendations,
   searchArticles,
@@ -8,7 +8,6 @@ import {
   getArticlesByCategory,
   getArticle,
 } from '@/utils/api';
-import { InterestSelector } from '@/components/InterestSelector';
 import { Header } from '@/components/Header';
 import { ArticleGrid } from '@/components/ArticleGrid';
 import { ArticleView } from '@/components/ArticleView';
@@ -25,10 +24,10 @@ const getSavedInterests = () => {
   }
 };
 
-const Index = () => {
-  // Always start on the interest selector — load saved interests only as defaults
-  const [interests, setInterests] = useState(null);  // null = not yet selected this session
-  const [savedInterests] = useState(getSavedInterests);  // pre-tick previous choices
+export default function FeedPage() {
+  const navigate = useNavigate();
+  // Always start with exact saved interests (no null fallback needed)
+  const [interests, setInterests] = useState(getSavedInterests());
   const [selectedArticle, setSelectedArticle] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
   const [displayedArticles, setDisplayedArticles] = useState([]);
@@ -37,6 +36,15 @@ const Index = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [isSearchMode, setIsSearchMode] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Open article passed from BookmarksPage via sessionStorage
+  useEffect(() => {
+    const stored = sessionStorage.getItem('openArticle')
+    if (stored) {
+      try { setSelectedArticle(JSON.parse(stored)) } catch { /* ignore */ }
+      sessionStorage.removeItem('openArticle')
+    }
+  }, [])
 
   // Fetch articles when interests change
   useEffect(() => {
@@ -54,7 +62,12 @@ const Index = () => {
           setLoading(false);
         });
     } else {
-      console.log('No interests selected, showing empty state')
+      // If no interests at all, fetch everything default
+      setLoading(true);
+      getAllArticles(0).then(articles => {
+        setDisplayedArticles(shuffleArray(articles));
+        setLoading(false);
+      }).catch(() => setLoading(false));
     }
   }, [interests]);
 
@@ -78,21 +91,8 @@ const Index = () => {
   const fetchArticlesByInterests = async (selectedInterests) => {
     // If no interests selected, get all articles
     if (!selectedInterests || selectedInterests.length === 0) {
-      console.log('No interests, fetching all articles')
       return await getAllArticles(0);
     }
-
-    // Map interests to search terms
-    const interestToTerms = {
-      'tech': ['tech', 'technology', 'computer', 'software', 'digital', 'internet'],
-      'business': ['business', 'company', 'market', 'economy', 'finance', 'corporate'],
-      'health': ['health', 'medical', 'doctor', 'disease', 'treatment', 'wellness'],
-      'science': ['science', 'research', 'study', 'discovery', 'scientific'],
-      'entertainment': ['entertainment', 'movie', 'music', 'film', 'celebrity', 'show'],
-      'sports': ['sport', 'game', 'player', 'team', 'match', 'athlete'],
-      'politics': ['politics', 'government', 'political', 'election', 'policy'],
-      'travel': ['travel', 'trip', 'destination', 'vacation', 'tourism']
-    };
 
     // Fetch articles for each interest using search
     const allArticles = [];
@@ -101,16 +101,8 @@ const Index = () => {
     const articlesPerInterest = 0;
 
     for (const interest of selectedInterests) {
-      console.log(`Fetching all articles for interest: ${interest}`);
-
       try {
-        // Map frontend interest ID to backend category ID
-        // Frontend: tech, business, health, etc.
-        // Backend: tech, business, sport, politics, entertainment
-        // Note: 'technology' isn't a direct ID in constant.js (it is 'tech'), but let's handle potential mismatches
-
         let category = interest;
-        // Simple mapping for safety, though IDs largely match
         const interestMap = {
           'technology': 'tech',
           'sports': 'sport',
@@ -123,24 +115,16 @@ const Index = () => {
           category = interestMap[interest];
         }
 
-        // Use the new category filter endpoint
         const articles = await getArticlesByCategory(category, articlesPerInterest);
-        console.log(`Found ${articles.length} articles for category ${category}`);
-
         if (articles.length > 0) {
           allArticles.push(...articles);
-        } else {
-          console.warn(`No articles found for category: ${category} `);
         }
-
       } catch (err) {
         console.error(`Error fetching for interest ${interest}: `, err);
       }
     }
 
-    // If no articles found through search, fall back to all articles
     if (allArticles.length === 0) {
-      console.log('No articles found through search, falling back to all articles')
       return await getAllArticles(0);
     }
 
@@ -153,33 +137,24 @@ const Index = () => {
       return true;
     });
 
-    console.log('Total unique articles:', uniqueArticles.length)
     return uniqueArticles;
   };
 
-  const handleInterestComplete = useCallback((selected) => {
-    setInterests(selected);
-    localStorage.setItem(INTERESTS_KEY, JSON.stringify(selected));
-  }, []);
-
   const handleChangeInterests = useCallback(() => {
-    setInterests([]);
     localStorage.removeItem(INTERESTS_KEY);
-    setSelectedArticle(null);
-  }, []);
+    navigate('/');
+  }, [navigate]);
 
   const handleRefresh = useCallback(async () => {
-    if (interests && interests.length > 0) {
-      setIsSearchMode(false);
-      setLoading(true);
-      try {
-        const articles = await fetchArticlesByInterests(interests);
-        setDisplayedArticles(shuffleArray(articles));
-      } catch (err) {
-        console.error('Error refreshing articles:', err);
-      } finally {
-        setLoading(false);
-      }
+    setIsSearchMode(false);
+    setLoading(true);
+    try {
+      const articles = await fetchArticlesByInterests(interests);
+      setDisplayedArticles(shuffleArray(articles));
+    } catch (err) {
+      console.error('Error refreshing articles:', err);
+    } finally {
+      setLoading(false);
     }
   }, [interests]);
 
@@ -187,16 +162,14 @@ const Index = () => {
     if (!query) {
       setIsSearchMode(false);
       setSearchQuery('');
-      if (interests && interests.length > 0) {
-        setLoading(true);
-        try {
-          const articles = await fetchArticlesByInterests(interests);
-          setDisplayedArticles(shuffleArray(articles));
-        } catch (err) {
-          console.error('Error restoring feed:', err);
-        } finally {
-          setLoading(false);
-        }
+      setLoading(true);
+      try {
+        const articles = await fetchArticlesByInterests(interests);
+        setDisplayedArticles(shuffleArray(articles));
+      } catch (err) {
+        console.error('Error restoring feed:', err);
+      } finally {
+        setLoading(false);
       }
       return;
     }
@@ -246,15 +219,6 @@ const Index = () => {
     setRecommendations([]);   // clear stale recommendations when going back
   }, []);
 
-  // Interest selection — always shown on fresh page load
-  if (interests === null) {
-    return (
-      <InterestSelector
-        defaultSelected={savedInterests}
-        onComplete={handleInterestComplete}
-      />
-    );
-  }
 
   // Loading articles
   if (loading && displayedArticles.length === 0) {
@@ -313,6 +277,4 @@ const Index = () => {
       )}
     </div>
   );
-};
-
-export default Index;
+}

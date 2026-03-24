@@ -1,12 +1,29 @@
 import { useState, useRef, useEffect } from 'react'
-import { Newspaper, RotateCcw, Settings, Search, X } from 'lucide-react'
+import { Newspaper, RotateCcw, Settings, Search, X, Bookmark } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { Button } from './ui/button'
 import { CATEGORIES } from '@/utils/constants'
 
+const BOOKMARKS_KEY = 'article-ai-bookmarks'
+function getBookmarkCount() {
+  try { return JSON.parse(localStorage.getItem(BOOKMARKS_KEY) || '[]').length } catch { return 0 }
+}
+
 export function Header({ interests, onChangeInterests, onRefresh, onSearch, isSearching }) {
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [focused, setFocused] = useState(false)
+  const [bookmarkCount, setBookmarkCount] = useState(getBookmarkCount)
   const inputRef = useRef(null)
+
+  // Keep bookmark count fresh whenever localStorage changes
+  useEffect(() => {
+    const sync = () => setBookmarkCount(getBookmarkCount())
+    window.addEventListener('storage', sync)
+    // Also poll on focus so count updates after navigating back from bookmarks page
+    window.addEventListener('focus', sync)
+    return () => { window.removeEventListener('storage', sync); window.removeEventListener('focus', sync) }
+  }, [])
 
   const selectedCategories = interests
     ? CATEGORIES.filter((c) => interests.includes(c.id))
@@ -37,12 +54,9 @@ export function Header({ interests, onChangeInterests, onRefresh, onSearch, isSe
         <div className="flex items-center gap-4 flex-wrap mb-3">
 
           {/* Logo */}
-          <div className="flex items-center gap-3 slide-down flex-shrink-0">
-            <div className="p-2.5 bg-gradient-to-br from-[#5C8374] to-[#93B1A6] rounded-lg shadow-md">
-              <Newspaper className="w-5 h-5 text-white" />
-            </div>
+          <div className="flex items-center gap-3 slide-down flex-shrink-0 group cursor-pointer transition-transform duration-300 hover:scale-105">
             <div>
-              <h1 className="text-xl font-bold text-[#183D3D] leading-tight" style={{ fontFamily: 'Georgia, serif' }}>
+              <h1 className="text-xl font-bold text-[#183D3D] leading-tight group-hover:text-[#5C8374] transition-colors duration-300" style={{ fontFamily: 'Georgia, serif' }}>
                 記事 (Kiji)
               </h1>
               <p className="text-xs text-[#183D3D]/50 font-medium">
@@ -113,9 +127,9 @@ export function Header({ interests, onChangeInterests, onRefresh, onSearch, isSe
                   mx-1.5 px-4 py-1.5 text-xs font-semibold rounded-lg
                   bg-gradient-to-br from-[#5C8374] to-[#93B1A6]
                   text-white shadow-sm
-                  hover:from-[#4a6b5f] hover:to-[#7a9a8e] hover:shadow-md
-                  disabled:opacity-40 disabled:cursor-not-allowed
-                  transition-all duration-200 flex-shrink-0
+                  hover:from-[#4a6b5f] hover:to-[#7a9a8e] hover:shadow-md hover:-translate-y-0.5 active:scale-95
+                  disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-sm
+                  transition-all duration-300 flex-shrink-0
                 "
               >
                 {isSearching ? 'Searching…' : 'Search'}
@@ -128,20 +142,34 @@ export function Header({ interests, onChangeInterests, onRefresh, onSearch, isSe
             <Button
               onClick={onRefresh}
               variant="ghost"
-              className="gap-2 text-[#183D3D] hover:bg-[#5C8374]/10 hover:text-[#5C8374] transition-all duration-300"
+              className="gap-2 text-[#183D3D] hover:bg-[#5C8374]/10 hover:text-[#5C8374] transition-all duration-300 transform hover:-translate-y-0.5 active:scale-95"
               title="Refresh articles"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="w-4 h-4 transition-transform duration-300 group-hover:rotate-180" />
               <span className="hidden sm:inline">Refresh</span>
             </Button>
             <Button
               onClick={onChangeInterests}
               variant="outline"
-              className="gap-2 text-[#183D3D] border-[#5C8374]/30 hover:bg-[#5C8374]/10 hover:border-[#5C8374] transition-all duration-300"
+              className="gap-2 text-[#183D3D] border-[#5C8374]/30 hover:bg-[#5C8374]/10 hover:border-[#5C8374] transition-all duration-300 transform hover:-translate-y-0.5 active:scale-95 hover:shadow-md"
             >
-              <Settings className="w-4 h-4" />
+              <Settings className="w-4 h-4 transition-transform duration-300 group-hover:rotate-90" />
               <span className="hidden sm:inline">Change Interests</span>
               <span className="sm:hidden">Interests</span>
+            </Button>
+            <Button
+              onClick={() => navigate('/bookmarks')}
+              variant="outline"
+              className="gap-2 text-[#183D3D] border-[#5C8374]/30 hover:bg-[#5C8374]/10 hover:border-[#5C8374] transition-all duration-300 transform hover:-translate-y-0.5 active:scale-95 hover:shadow-md relative"
+              title="My Bookmarks"
+            >
+              <Bookmark className="w-4 h-4" />
+              <span className="hidden sm:inline">Bookmarks</span>
+              {bookmarkCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-[#5C8374] text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {bookmarkCount}
+                </span>
+              )}
             </Button>
           </div>
         </div>
@@ -152,7 +180,7 @@ export function Header({ interests, onChangeInterests, onRefresh, onSearch, isSe
             {selectedCategories.map((cat, idx) => (
               <span
                 key={cat.id}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-[#5C8374]/10 to-[#93B1A6]/10 text-[#183D3D] rounded-full text-xs font-semibold border border-[#5C8374]/30 hover:border-[#5C8374] transition-all duration-300 hover:shadow-md"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-[#5C8374]/10 to-[#93B1A6]/10 text-[#183D3D] rounded-full text-xs font-semibold border border-[#5C8374]/30 hover:border-[#5C8374] transition-all duration-300 hover:shadow-md hover:-translate-y-1 hover:scale-105 cursor-default"
                 style={{ animationDelay: `${idx * 0.05}s` }}
               >
                 <span className="material-icons text-sm">{cat.icon}</span>

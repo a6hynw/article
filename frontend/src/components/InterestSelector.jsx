@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { CATEGORIES } from '@/utils/constants';
 import { Button } from '@/components/ui/button';
 import { Sparkles, ArrowRight, Check } from 'lucide-react';
-import './InterestSelector.css';
+
 
 export function InterestSelector({ onComplete, defaultSelected = [] }) {
   const [selected, setSelected] = useState(defaultSelected);
@@ -23,9 +23,25 @@ export function InterestSelector({ onComplete, defaultSelected = [] }) {
     <div className="min-h-screen bg-[#F0F4F3] relative overflow-hidden flex flex-col items-center justify-center p-4">
       {/* Animated background effects */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#5C8374]/10 rounded-full blur-3xl animate-float" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#93B1A6]/10 rounded-full blur-3xl animate-float-delayed" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-[#5C8374]/5 rounded-full blur-3xl animate-pulse-slow" />
+        <div className="absolute top-0 right-1/4 w-[30rem] h-[30rem] bg-[#5C8374]/15 rounded-full blur-3xl animate-float" />
+        <div className="absolute bottom-0 left-1/4 w-[40rem] h-[40rem] bg-[#93B1A6]/15 rounded-full blur-3xl animate-float-delayed" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[#5C8374]/10 rounded-full blur-3xl animate-pulse-slow" />
+
+        {/* Floating Sparks (Particles) */}
+        {[...Array(24)].map((_, i) => (
+          <div
+            key={`particle-${i}`}
+            className="particle"
+            style={{
+              left: `${Math.random() * 100}%`,
+              width: `${Math.random() * 6 + 3}px`,
+              height: `${Math.random() * 6 + 3}px`,
+              animationDelay: `-${Math.random() * 20}s`,
+              animationDuration: `${Math.random() * 15 + 15}s`,
+              opacity: Math.random() * 0.5 + 0.2
+            }}
+          />
+        ))}
       </div>
 
       {/* Subtle pattern overlay */}

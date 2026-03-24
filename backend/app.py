@@ -49,29 +49,37 @@ class SimpleRecommender:
             base = self.articles_df[self.articles_df['article_id'] == article_id]
             if base.empty:
                 return []
-            category = base.iloc[0].get('category', None)
+            base_content = base.iloc[0].get('content', '')
+            base_words = set(base_content.lower().split()) if base_content else set()
         except Exception:
             return []
 
-        if category:
-            candidates = self.articles_df[self.articles_df['category'] == category]
-            candidates = candidates[candidates['article_id'] != article_id]
-        else:
-            candidates = self.articles_df[self.articles_df['article_id'] != article_id]
+        # Get all other articles
+        candidates = self.articles_df[self.articles_df['article_id'] != article_id].copy()
 
-        # If not enough same-category items, pad with other articles
-        if len(candidates) < top_n:
-            others = self.articles_df[self.articles_df['article_id'] != article_id]
-            candidates = pd.concat([candidates, others]).drop_duplicates('article_id')
+        # Compute similarity scores
+        similarities = []
+        for _, row in candidates.iterrows():
+            cand_content = row.get('content', '')
+            cand_words = set(cand_content.lower().split()) if cand_content else set()
+            union = base_words | cand_words
+            if union:
+                sim = len(base_words & cand_words) / len(union)
+            else:
+                sim = 0.0
+            similarities.append((sim, row))
 
-        # Take a deterministic slice to keep results stable
-        candidates = candidates.head(top_n)
+        # Sort by similarity descending
+        similarities.sort(key=lambda x: x[0], reverse=True)
+
+        # Take top_n
+        top_candidates = similarities[:top_n]
 
         results = []
-        for _, row in candidates.iterrows():
+        for sim, row in top_candidates:
             results.append({
                 'article_id': int(row['article_id']),
-                'similarity_score': 0.0,
+                'similarity_score': sim,
                 'content_preview': str(row.get('content', ''))[:200] + '...',
                 'summary': row.get('summary', 'Summary not available')
             })
@@ -91,7 +99,7 @@ class SimpleRecommender:
         for _, row in matches.iterrows():
             results.append({
                 'article_id': int(row['article_id']),
-                'similarity_score': 0.0,
+                'similarity_score': 0.5,
                 'content_preview': str(row.get('content', ''))[:200] + '...',
                 'summary': row.get('summary', 'Summary not available')
             })
@@ -111,6 +119,8 @@ def load_data_and_model():
 
     if ARTICLES_DF is None:
         ARTICLES_DF = pd.read_csv(data_path)
+        # Ensure article_id is int for consistent comparisons
+        ARTICLES_DF['article_id'] = ARTICLES_DF['article_id'].astype(int)
 
     # Then try to import/fit the recommender; if it fails, leave RECOMMENDER as None
     if RECOMMENDER is None:
@@ -210,6 +220,9 @@ def get_articles():
                     ARTICLES_DF['category'].str.lower() == cf
                 ]
             
+        if 'article_id' in filtered_df.columns:
+            filtered_df = filtered_df.sort_values(by='article_id', ascending=False)
+            
         if limit and limit > 0:
             articles = filtered_df.head(limit).copy()
         else:
@@ -219,7 +232,14 @@ def get_articles():
         articles['id'] = articles['article_id'].astype(int)
         # Guard against NaN content before chaining string operations
         safe_content = articles['content'].fillna('')
-        articles['title'] = safe_content.str.split('\n').str[0].str[:80]
+        # Prefer explicit title column; fall back to first line of content
+        if 'title' in articles.columns:
+            articles['title'] = articles['title'].fillna('').where(
+                articles['title'].fillna('').str.strip() != '', 
+                safe_content.str.split('\n').str[0].str[:80]
+            )
+        else:
+            articles['title'] = safe_content.str.split('\n').str[0].str[:80]
         articles['imageUrl'] = 'https://images.unsplash.com/photo-1617957796155-72d8717ac882?q=80&w=1632&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
         articles['author'] = 'BBC News'
         # Ensure category is present (it should be)
@@ -327,13 +347,21 @@ def get_recommendations(article_id):
                 article = ARTICLES_DF.iloc[article_idx[0]]
                 raw_content = article['content'] if 'content' in article.index else None
                 safe_content = str(raw_content) if (raw_content is not None and pd.notna(raw_content)) else ''
-                rec['title'] = safe_content.split('\n')[0][:100] if safe_content else 'Untitled'
+                rec['title'] = str(article.get('title', safe_content.split('\n')[0][:100] if safe_content else 'Untitled'))
                 rec['imageUrl'] = 'https://images.unsplash.com/photo-1617957743103-310accdfb999?q=80&w=1632&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
                 rec['author'] = 'BBC News'
                 raw_cat = article['category'] if 'category' in article.index else None
                 rec['category'] = str(raw_cat) if (raw_cat is not None and pd.notna(raw_cat)) else 'general'
                 rec['excerpt'] = safe_content[:150] if safe_content else ''
                 rec['content'] = safe_content
+            else:
+                # If article not found in DF, use defaults or skip; here we use defaults to avoid breaking cards
+                rec['title'] = rec.get('title', 'Untitled')
+                rec['imageUrl'] = rec.get('imageUrl', 'https://images.unsplash.com/photo-1617957743103-310accdfb999?q=80&w=1632&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D')
+                rec['author'] = rec.get('author', 'BBC News')
+                rec['category'] = rec.get('category', 'general')
+                rec['excerpt'] = rec.get('excerpt', rec.get('content_preview', ''))
+                rec['content'] = rec.get('content', '')
 
             enhanced_results.append(rec)
         
@@ -357,10 +385,20 @@ def search_articles():
             return jsonify({"error": "Query is required"}), 400
 
         print(f"Searching for: {query}")
-        raw_matches = ARTICLES_DF[
-            ARTICLES_DF['content'].str.contains(query, case=False, na=False) |
-            ARTICLES_DF['category'].str.contains(query, case=False, na=False)
-        ]
+        
+        mask = ARTICLES_DF['content'].str.contains(query, case=False, na=False) | \
+               ARTICLES_DF['category'].str.contains(query, case=False, na=False)
+        
+        if 'title' in ARTICLES_DF.columns:
+            mask |= ARTICLES_DF['title'].str.contains(query, case=False, na=False)
+        if 'summary' in ARTICLES_DF.columns:
+            mask |= ARTICLES_DF['summary'].str.contains(query, case=False, na=False)
+            
+        raw_matches = ARTICLES_DF[mask]
+        
+        if 'article_id' in raw_matches.columns:
+            raw_matches = raw_matches.sort_values(by='article_id', ascending=False)
+            
         # top_n=0 means no limit; otherwise apply the cap
         matching_articles = raw_matches if top_n <= 0 else raw_matches.head(top_n)
 
@@ -387,7 +425,7 @@ def search_articles():
                 'id': art_id,
                 'article_id': art_id,
                 'similarity_score': 0.5,
-                'title': safe_content.split('\n')[0][:100] if safe_content else 'Untitled',
+                'title': str(row.get('title', safe_content.split('\n')[0][:100] if safe_content else 'Untitled')),
                 'content': safe_content,
                 'content_preview': safe_content[:200] + '...' if safe_content else '',
                 'excerpt': safe_content[:150],
@@ -401,6 +439,95 @@ def search_articles():
     except Exception as e:
         print(f"Search error: {e}")
         traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/stats", methods=["GET"])
+def get_admin_stats():
+    """Get admin statistics"""
+    try:
+        load_data()
+        total_articles = len(ARTICLES_DF)
+        categories = ARTICLES_DF['category'].value_counts().to_dict() if 'category' in ARTICLES_DF.columns else {}
+        return jsonify({
+            "total_articles": total_articles,
+            "categories": categories
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/articles", methods=["POST"])
+def add_article():
+    """Add a new article (admin only)"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON"}), 400
+        
+        content = data.get('content', '').strip()
+        summary = data.get('summary', '').strip()
+        category = data.get('category', 'general').strip()
+        title = data.get('title', '').strip()
+        
+        if not content:
+            return jsonify({"error": "Content is required"}), 400
+        
+        global ARTICLES_DF
+        load_data()
+        
+        new_id = int(ARTICLES_DF['article_id'].max()) + 1 if not ARTICLES_DF.empty else 1
+        
+        new_row = {
+            'article_id': new_id,
+            'title': title or content.split('\n')[0][:100],
+            'content': content,
+            'summary': summary,
+            'category': category
+        }
+        
+        ARTICLES_DF = pd.concat([ARTICLES_DF, pd.DataFrame([new_row])], ignore_index=True)
+        
+        # Save to disk permanently (soft fail on Vercel Read-Only Serverless)
+        data_path = ROOT_DIR / "data" / "processed" / "articles_processed.csv"
+        try:
+            ARTICLES_DF.to_csv(data_path, index=False)
+        except OSError:
+            print("Vercel Serverless environment detected: skipping local CSV write.")
+        
+        return jsonify({"message": "Article added", "article_id": new_id}), 201
+    except Exception as e:
+        print(f"Error adding article: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/articles/<article_id>", methods=["DELETE"])
+def delete_article(article_id):
+    """Delete an article (admin only)"""
+    try:
+        global ARTICLES_DF
+        load_data()
+        
+        try:
+            aid = int(float(article_id))
+        except:
+            return jsonify({"error": "Invalid article id"}), 400
+        
+        if aid not in ARTICLES_DF['article_id'].values:
+            return jsonify({"error": "Article not found"}), 404
+        
+        ARTICLES_DF = ARTICLES_DF[ARTICLES_DF['article_id'] != aid]
+        
+        # Save to disk permanently (soft fail on Vercel Read-Only Serverless)
+        data_path = ROOT_DIR / "data" / "processed" / "articles_processed.csv"
+        try:
+            ARTICLES_DF.to_csv(data_path, index=False)
+        except OSError:
+            print("Vercel Serverless environment detected: skipping local CSV write.")
+        
+        return jsonify({"message": "Article deleted"}), 200
+    except Exception as e:
+        print(f"Error deleting article: {e}")
         return jsonify({"error": str(e)}), 500
 
 

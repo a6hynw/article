@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
+const API_BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:5000'
 
 // Helper function to create fetch with timeout
 async function fetchWithTimeout(url, options = {}, timeout = 10000) {
@@ -172,4 +172,50 @@ export function shuffleArray(array) {
       ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
   }
   return shuffled
+}
+
+// Admin functions
+export async function getAdminStats() {
+  try {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/api/admin/stats`)
+    if (!response.ok) {
+      throw new Error(`Failed to fetch stats: ${response.status}`)
+    }
+    return await response.json()
+  } catch (error) {
+    console.error('Error fetching admin stats:', error)
+    return null
+  }
+}
+
+export async function addArticle(articleData) {
+  try {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/api/articles`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(articleData)
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to add article: ${response.status}`)
+    }
+    return await response.json()
+  } catch (error) {
+    console.error('Error adding article:', error)
+    throw error
+  }
+}
+
+export async function deleteArticle(articleId) {
+  try {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/api/articles/${articleId}`, {
+      method: 'DELETE'
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to delete article: ${response.status}`)
+    }
+    return await response.json()
+  } catch (error) {
+    console.error('Error deleting article:', error)
+    throw error
+  }
 }

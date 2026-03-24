@@ -1,4 +1,5 @@
-import { Clock, ArrowRight, Bookmark } from 'lucide-react'
+import { useState } from 'react'
+import { Clock, ArrowRight, Bookmark, BookmarkCheck } from 'lucide-react'
 import { CATEGORIES } from '@/utils/constants'
 
 // Splits `text` on matching `query` and wraps matches in an underlined teal span
@@ -18,6 +19,24 @@ function HighlightedText({ text, query }) {
 }
 
 export function ArticleCard({ article, onClick, variant = 'default', highlightQuery = '' }) {
+    // Bookmark state from localStorage
+    const BOOKMARKS_KEY = 'article-ai-bookmarks'
+    const getBookmarks = () => { try { return JSON.parse(localStorage.getItem(BOOKMARKS_KEY) || '[]') } catch { return [] } }
+    const articleId = article.article_id || article.id
+    const [bookmarked, setBookmarked] = useState(() => getBookmarks().includes(articleId))
+
+    const handleBookmark = (e) => {
+        e.stopPropagation()
+        const saved = getBookmarks()
+        if (saved.includes(articleId)) {
+            localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(saved.filter(b => b !== articleId)))
+            setBookmarked(false)
+        } else {
+            localStorage.setItem(BOOKMARKS_KEY, JSON.stringify([...saved, articleId]))
+            setBookmarked(true)
+        }
+    }
+
     // Get category from categories list or use article.category directly
     let category = null
     if (CATEGORIES && CATEGORIES.length > 0) {
@@ -66,7 +85,7 @@ export function ArticleCard({ article, onClick, variant = 'default', highlightQu
         return (
             <button
                 onClick={onClick}
-                className="w-full text-left p-4 rounded-lg bg-white/70 hover:bg-white backdrop-blur-sm transition-all duration-300 group border border-[#5C8374]/20 hover:border-[#5C8374]/50 shadow-sm hover:shadow-md"
+                className="w-full text-left p-4 rounded-lg bg-white/70 hover:bg-white backdrop-blur-sm transition-all duration-500 group border border-[#5C8374]/20 hover:border-[#5C8374]/50 shadow-sm hover:shadow-[0_15px_30px_-10px_rgba(92,131,116,0.3)] transform hover:-translate-y-1"
             >
                 <div className="flex gap-3">
                     <img
@@ -101,7 +120,7 @@ export function ArticleCard({ article, onClick, variant = 'default', highlightQu
     return (
         <article
             onClick={onClick}
-            className="group cursor-pointer bg-white/70 backdrop-blur-sm rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300"
+            className="group cursor-pointer bg-white/70 backdrop-blur-sm rounded-xl overflow-hidden shadow-[0_4px_20px_-10px_rgba(24,61,61,0.1)] hover:shadow-[0_20px_40px_-15px_rgba(92,131,116,0.4)] transition-all duration-500 transform hover:-translate-y-2 hover:bg-white border border-[#5C8374]/5 hover:border-[#5C8374]/20"
         >
             <div className="relative overflow-hidden h-48">
                 <img
@@ -121,10 +140,15 @@ export function ArticleCard({ article, onClick, variant = 'default', highlightQu
                 </div>
 
                 <button
-                    className="absolute top-4 right-4 p-2 rounded-full bg-white/95 backdrop-blur-md shadow-lg opacity-0 group-hover:opacity-100 transition-all duration-300 hover:bg-[#5C8374] hover:text-white text-[#183D3D]"
-                    aria-label="Bookmark"
+                    onClick={handleBookmark}
+                    title={bookmarked ? 'Remove bookmark' : 'Bookmark article'}
+                    className={`absolute top-4 right-4 p-2 rounded-full backdrop-blur-md shadow-lg opacity-0 transition-all duration-500 transform ${bookmarked
+                        ? 'bg-[#5C8374] text-white opacity-100 scale-100 block'
+                        : 'bg-white/95 hover:bg-[#5C8374] hover:text-white text-[#183D3D] translate-y-2 group-hover:translate-y-0 group-hover:opacity-100 scale-95 group-hover:scale-100'
+                        }`}
+                    aria-label={bookmarked ? 'Remove bookmark' : 'Bookmark'}
                 >
-                    <Bookmark className="w-4 h-4" />
+                    {bookmarked ? <BookmarkCheck className="w-4 h-4" /> : <Bookmark className="w-4 h-4" />}
                 </button>
             </div>
 
