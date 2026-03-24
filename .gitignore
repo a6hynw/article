@@ -5,7 +5,7 @@ backend/venv/
 backend/*.egg-info/
 backend/.env
 backend/.env.local
-backend/data/processed/
+
 backend/*.pyc
 
 # Frontend
