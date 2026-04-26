@@ -65,14 +65,6 @@ class TFIDFRecommender:
 
         print(f"   ✅ TF-IDF matrix shape: {self.tfidf_matrix.shape}")
 
-        print("\n3. Calculating cosine similarity...")
-        # Compute cosine similarity (may be memory heavy for large corpora)
-        try:
-            self.similarity_matrix = cosine_similarity(self.tfidf_matrix)
-        except Exception as e:
-            print(f"Error computing similarity matrix: {e}")
-            self.similarity_matrix = None
-
         print("\n✅ MODEL TRAINING COMPLETE!")
         return self
 
@@ -85,16 +77,20 @@ class TFIDFRecommender:
             print(f"❌ Article ID {article_id} not found")
             return []
 
-        if self.similarity_matrix is None:
-            print("❌ Similarity matrix not available; ensure fit() completed successfully")
+        if self.tfidf_matrix is None:
+            print("❌ TF-IDF matrix not available; ensure fit() completed successfully")
             return []
 
         article_idx = self.articles_df[
             self.articles_df["article_id"] == article_id
         ].index[0]
 
-        similarity_scores = self.similarity_matrix[article_idx]
-        similar_indices = similarity_scores.argsort()[::-1][1:top_n + 1]
+        target_vector = self.tfidf_matrix[article_idx]
+        similarity_scores = cosine_similarity(target_vector, self.tfidf_matrix)[0]
+        
+        # similar_indices = similarity_scores.argsort()[::-1][1:top_n + 1]
+        similar_indices = similarity_scores.argsort()[::-1]
+        similar_indices = [idx for idx in similar_indices if idx != article_idx][:top_n]
 
         recommendations = []
         for idx in similar_indices:

@@ -1,5 +1,5 @@
-// Categories for article filtering
-// utils/constants.js
+// Categories for article filtering — IDs must match backend category values exactly.
+// BBC dataset uses: 'sport', 'business', 'tech', 'entertainment', 'politics'
 export const CATEGORIES = [
   {
     id: 'tech',
@@ -13,18 +13,6 @@ export const CATEGORIES = [
     icon: 'trending_up',
     description: 'Markets, startups, and economy'
   },
-  // { 
-  //   id: 'health', 
-  //   label: 'Health', 
-  //   icon: 'favorite',
-  //   description: 'Wellness and medical breakthroughs'
-  // },
-  // { 
-  //   id: 'science', 
-  //   label: 'Science', 
-  //   icon: 'science',
-  //   description: 'Discoveries and research'
-  // },
   {
     id: 'entertainment',
     label: 'Entertainment',
@@ -32,7 +20,7 @@ export const CATEGORIES = [
     description: 'Movies, music, and pop culture'
   },
   {
-    id: 'sports',
+    id: 'sport',
     label: 'Sports',
     icon: 'emoji_events',
     description: 'Games, athletes, and competitions'
@@ -43,10 +31,4 @@ export const CATEGORIES = [
     icon: 'account_balance',
     description: 'Government and current affairs'
   },
-  // { 
-  //   id: 'travel', 
-  //   label: 'Travel', 
-  //   icon: 'flight',
-  //   description: 'Destinations and adventures'
-  // },
 ]

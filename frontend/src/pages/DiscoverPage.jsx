@@ -1,9 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getAllArticles } from '@/utils/api'
+import { getAllArticles, getArticlesByCategory } from '@/utils/api'
 import { ArticleCard } from '@/components/ArticleCard'
 import { CATEGORIES } from '@/utils/constants'
 import { ArrowLeft, Flame, ChevronRight } from 'lucide-react'
+
+// Map frontend category IDs to backend category values
+const CATEGORY_BACKEND_MAP = {
+  'sports': 'sport',
+  'technology': 'tech',
+}
 
 export default function DiscoverPage() {
   const navigate = useNavigate()
@@ -11,20 +17,38 @@ export default function DiscoverPage() {
   const [loading, setLoading] = useState(true)
   const [activeCategory, setActiveCategory] = useState('all')
 
-  useEffect(() => {
-    getAllArticles(200)
-      .then(data => { setAllArticles(data); setLoading(false) })
-      .catch(() => setLoading(false))
+  const fetchForCategory = useCallback(async (catId) => {
+    setLoading(true)
+    try {
+      let data
+      if (catId === 'all') {
+        data = await getAllArticles(200)
+      } else {
+        const backendCat = CATEGORY_BACKEND_MAP[catId] || catId
+        data = await getArticlesByCategory(backendCat, 0)
+      }
+      setAllArticles(data)
+    } catch {
+      // silent — show empty state
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    fetchForCategory(activeCategory)
+  }, [activeCategory, fetchForCategory])
+
+  const handleCategoryChange = (catId) => {
+    setActiveCategory(catId)
+  }
 
   const handleSelectArticle = (article) => {
     const id = article.article_id || article.id
     navigate(`/article/${id}`, { state: { article } })
   }
 
-  const filtered = activeCategory === 'all'
-    ? allArticles
-    : allArticles.filter(a => a.category === activeCategory)
+  const filtered = allArticles
 
   const categories = [{ id: 'all', label: 'All', icon: 'apps' }, ...CATEGORIES]
 
@@ -53,7 +77,7 @@ export default function DiscoverPage() {
           {categories.map(cat => (
             <button
               key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
+              onClick={() => handleCategoryChange(cat.id)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 flex-shrink-0 ${activeCategory === cat.id
                   ? 'bg-[#183D3D] text-white shadow-md'
                   : 'bg-white/70 text-[#183D3D] border border-[#5C8374]/20 hover:border-[#5C8374]/50 hover:bg-white'

@@ -1,5 +1,6 @@
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify
+import os
 import pandas as pd
 import traceback
 from flask_cors import CORS
@@ -22,6 +23,20 @@ def import_recommender():
 
 app = Flask(__name__)
 CORS(app)
+
+# Admin authentication — read password from environment variable.
+# Set ADMIN_PASSWORD env var in production; the default is only for local dev.
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+
+def check_admin_auth(request):
+    """Verify admin authentication via Authorization header or query param."""
+    auth_header = request.headers.get('Authorization', '')
+    auth_param = request.args.get('admin_token', '')
+
+    if auth_header.startswith('Bearer '):
+        token = auth_header[7:]
+        return token == ADMIN_PASSWORD
+    return auth_param == ADMIN_PASSWORD
 
 # Global (lazy) model and data holders
 RECOMMENDER = None
@@ -49,7 +64,8 @@ class SimpleRecommender:
             base = self.articles_df[self.articles_df['article_id'] == article_id]
             if base.empty:
                 return []
-            base_content = base.iloc[0].get('content', '')
+            # Use processed_content if available, fall back to content
+            base_content = base.iloc[0].get('processed_content') or base.iloc[0].get('content', '')
             base_words = set(base_content.lower().split()) if base_content else set()
         except Exception:
             return []
@@ -60,7 +76,8 @@ class SimpleRecommender:
         # Compute similarity scores
         similarities = []
         for _, row in candidates.iterrows():
-            cand_content = row.get('content', '')
+            # Use processed_content if available, fall back to content
+            cand_content = row.get('processed_content') or row.get('content', '')
             cand_words = set(cand_content.lower().split()) if cand_content else set()
             union = base_words | cand_words
             if union:
@@ -126,8 +143,9 @@ def load_data_and_model():
     if RECOMMENDER is None:
         try:
             TFIDFRecommender = import_recommender()
-            RECOMMENDER = TFIDFRecommender()
-            RECOMMENDER.fit(ARTICLES_DF)
+            temp_rec = TFIDFRecommender()
+            temp_rec.fit(ARTICLES_DF)
+            RECOMMENDER = temp_rec
         except Exception as e:
             # If the TF-IDF recommender can't be imported or fails to fit,
             # fall back to a lightweight recommender so the frontend still
@@ -288,9 +306,13 @@ def get_article(article_id):
         
         article_data = article.to_dict(orient='records')[0]
 
-        # Add derived fields for frontend
+        # Handle potential NaN values safely
+        raw_content = article_data.get('content')
+        safe_content = str(raw_content) if raw_content is not None and pd.notna(raw_content) else ''
+        raw_title = article_data.get('title')
+        
         article_data['id'] = article_data.get('article_id')
-        article_data['title'] = article_data.get('content', '').split('\n')[0][:100]
+        article_data['title'] = str(raw_title) if raw_title is not None and pd.notna(raw_title) else (safe_content.split('\n')[0][:100] if safe_content else 'Untitled')
         article_data['imageUrl'] = 'https://images.unsplash.com/photo-1504711331062-f86b0b51b552?w=800&h=400&fit=crop'
         article_data['author'] = 'BBC News'
         # article above is a DataFrame slice; prefer the already-extracted value
@@ -344,7 +366,7 @@ def get_recommendations(article_id):
                 article_idx = []
 
             if len(article_idx) > 0:
-                article = ARTICLES_DF.iloc[article_idx[0]]
+                article = ARTICLES_DF.loc[article_idx[0]]
                 raw_content = article['content'] if 'content' in article.index else None
                 safe_content = str(raw_content) if (raw_content is not None and pd.notna(raw_content)) else ''
                 rec['title'] = str(article.get('title', safe_content.split('\n')[0][:100] if safe_content else 'Untitled'))
@@ -430,7 +452,7 @@ def search_articles():
                 'content_preview': safe_content[:200] + '...' if safe_content else '',
                 'excerpt': safe_content[:150],
                 'summary': safe_summary,
-                'imageUrl': 'https://images.unsplash.com/photo-1504711331062-f86b0b51b552?w=500&h=300&fit=crop',
+                'imageUrl': 'https://images.unsplash.com/photo-1635776062360-af423602aff3?q=80&w=1632&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
                 'author': 'BBC News',
                 'category': safe_cat,
             })
@@ -444,14 +466,19 @@ def search_articles():
 
 @app.route("/api/admin/stats", methods=["GET"])
 def get_admin_stats():
-    """Get admin statistics"""
+    """Get admin statistics (auth required)"""
+    if not check_admin_auth(request):
+        return jsonify({"error": "Unauthorized"}), 401
     try:
         load_data()
         total_articles = len(ARTICLES_DF)
         categories = ARTICLES_DF['category'].value_counts().to_dict() if 'category' in ARTICLES_DF.columns else {}
+        # Signal to the frontend whether the filesystem is read-only (e.g. Vercel)
+        is_vercel = bool(os.environ.get('VERCEL') or os.environ.get('VERCEL_ENV'))
         return jsonify({
             "total_articles": total_articles,
-            "categories": categories
+            "categories": categories,
+            "ephemeral": is_vercel,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -460,24 +487,26 @@ def get_admin_stats():
 @app.route("/api/articles", methods=["POST"])
 def add_article():
     """Add a new article (admin only)"""
+    if not check_admin_auth(request):
+        return jsonify({"error": "Unauthorized"}), 401
     try:
         data = request.get_json()
         if not data:
             return jsonify({"error": "Invalid JSON"}), 400
-        
+
         content = data.get('content', '').strip()
         summary = data.get('summary', '').strip()
         category = data.get('category', 'general').strip()
         title = data.get('title', '').strip()
-        
+
         if not content:
             return jsonify({"error": "Content is required"}), 400
-        
-        global ARTICLES_DF
+
+        global RECOMMENDER, ARTICLES_DF
         load_data()
-        
+
         new_id = int(ARTICLES_DF['article_id'].max()) + 1 if not ARTICLES_DF.empty else 1
-        
+
         new_row = {
             'article_id': new_id,
             'title': title or content.split('\n')[0][:100],
@@ -485,16 +514,23 @@ def add_article():
             'summary': summary,
             'category': category
         }
-        
+
         ARTICLES_DF = pd.concat([ARTICLES_DF, pd.DataFrame([new_row])], ignore_index=True)
-        
+
         # Save to disk permanently (soft fail on Vercel Read-Only Serverless)
         data_path = ROOT_DIR / "data" / "processed" / "articles_processed.csv"
         try:
             ARTICLES_DF.to_csv(data_path, index=False)
         except OSError:
-            print("Vercel Serverless environment detected: skipping local CSV write.")
-        
+            print("[WARNING] Vercel Serverless: filesystem is read-only. Article added in-memory only — changes will be lost on next cold start.")
+
+        # Re-fit recommender if available
+        if RECOMMENDER is not None:
+            try:
+                RECOMMENDER.fit(ARTICLES_DF)
+            except Exception as e:
+                print(f"Warning: Could not re-fit recommender: {e}")
+
         return jsonify({"message": "Article added", "article_id": new_id}), 201
     except Exception as e:
         print(f"Error adding article: {e}")
@@ -504,32 +540,51 @@ def add_article():
 @app.route("/api/articles/<article_id>", methods=["DELETE"])
 def delete_article(article_id):
     """Delete an article (admin only)"""
+    if not check_admin_auth(request):
+        return jsonify({"error": "Unauthorized"}), 401
     try:
-        global ARTICLES_DF
+        global RECOMMENDER, ARTICLES_DF
         load_data()
-        
+
         try:
             aid = int(float(article_id))
         except:
             return jsonify({"error": "Invalid article id"}), 400
-        
+
         if aid not in ARTICLES_DF['article_id'].values:
             return jsonify({"error": "Article not found"}), 404
-        
+
         ARTICLES_DF = ARTICLES_DF[ARTICLES_DF['article_id'] != aid]
-        
+
         # Save to disk permanently (soft fail on Vercel Read-Only Serverless)
         data_path = ROOT_DIR / "data" / "processed" / "articles_processed.csv"
         try:
             ARTICLES_DF.to_csv(data_path, index=False)
         except OSError:
-            print("Vercel Serverless environment detected: skipping local CSV write.")
-        
+            print("[WARNING] Vercel Serverless: filesystem is read-only. Article deleted in-memory only — changes will be lost on next cold start.")
+
+        # Re-fit recommender if available
+        if RECOMMENDER is not None:
+            try:
+                RECOMMENDER.fit(ARTICLES_DF)
+            except Exception as e:
+                print(f"Warning: Could not re-fit recommender: {e}")
+
         return jsonify({"message": "Article deleted"}), 200
     except Exception as e:
         print(f"Error deleting article: {e}")
         return jsonify({"error": str(e)}), 500
 
+
+# ==========================================
+# STARTUP INITIALIZATION
+# ==========================================
+print("\n🚀 Starting preprocessing and model training on startup...")
+try:
+    load_data_and_model()
+    print("✅ Preprocessing and model training completed successfully!\n")
+except Exception as e:
+    print(f"❌ Failed to load data and model on startup: {e}\n")
 
 if __name__ == "__main__":
     # Run dev server

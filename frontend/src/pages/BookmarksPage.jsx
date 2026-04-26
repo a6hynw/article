@@ -4,34 +4,32 @@ import { useNavigate } from 'react-router-dom'
 import { getArticle } from '@/utils/api'
 import { ArticleCard } from '@/components/ArticleCard'
 
-const BOOKMARKS_KEY = 'article-ai-bookmarks'
-
-function getBookmarkIds() {
-  try { return JSON.parse(localStorage.getItem(BOOKMARKS_KEY) || '[]') } catch { return [] }
-}
+import { useBookmarks } from '@/hooks/useBookmarks'
 
 export default function BookmarksPage() {
   const navigate = useNavigate()
   const [articles, setArticles] = useState([])
   const [loading, setLoading] = useState(true)
-  const [bookmarkIds, setBookmarkIds] = useState(getBookmarkIds)
+  const { bookmarkIds, toggleBookmark } = useBookmarks()
 
   useEffect(() => {
-    const ids = getBookmarkIds()
-    if (ids.length === 0) { setLoading(false); return }
+    if (bookmarkIds.length === 0) { setLoading(false); return }
 
-    Promise.all(ids.map(id => getArticle(id).catch(() => null)))
+    Promise.all(bookmarkIds.map(id => getArticle(id).catch(() => null)))
       .then(results => {
         setArticles(results.filter(Boolean))
         setLoading(false)
       })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Keep articles list synced with bookmarkIds when items are removed
+  useEffect(() => {
+    setArticles(prev => prev.filter(a => bookmarkIds.includes(a.article_id || a.id)))
+  }, [bookmarkIds])
+
   const handleRemoveBookmark = (articleId) => {
-    const updated = bookmarkIds.filter(id => id !== articleId)
-    localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(updated))
-    setBookmarkIds(updated)
-    setArticles(prev => prev.filter(a => (a.article_id || a.id) !== articleId))
+    toggleBookmark(articleId)
   }
 
   const handleOpenArticle = (article) => {
@@ -57,7 +55,7 @@ export default function BookmarksPage() {
             </h1>
           </div>
           <span className="ml-2 px-2.5 py-0.5 bg-[#5C8374]/10 text-[#5C8374] text-sm font-semibold rounded-full">
-            {bookmarkIds.length}
+            {articles.length || bookmarkIds.length}
           </span>
         </div>
       </header>
@@ -85,7 +83,7 @@ export default function BookmarksPage() {
               Hover over any article card and click the bookmark icon, or use the bookmark button while reading an article.
             </p>
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/article')}
               className="mt-4 px-6 py-3 bg-[#5C8374] text-white rounded-xl font-semibold hover:bg-[#183D3D] transition-all duration-300 shadow-md hover:shadow-lg"
             >
               Browse Articles

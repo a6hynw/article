@@ -159,14 +159,24 @@ def preprocess_dataset():
     df = df.reset_index(drop=True)
     df["article_id"] = df.index.astype(int)
 
-    # Select final columns and ensure names are standardized
-    final_cols = ["article_id", CONTENT_COLUMN, SUMMARY_COLUMN, "processed_content", TITLE_COLUMN, CATEGORY_COLUMN]
-    # Deduplicate and keep order
+    # Select final columns and ensure names are standardized.
+    # Note: CATEGORY_COLUMN may have been reassigned to 'labels' above; in that
+    # case 'category' already exists as a normalized column from first_label().
+    # We always include the 'category' column explicitly and avoid re-renaming it.
+    final_cols = ["article_id", CONTENT_COLUMN, SUMMARY_COLUMN, "processed_content", TITLE_COLUMN, "category"]
+    # If the raw labels column is different from 'category', keep it too
+    if CATEGORY_COLUMN not in ("category", None) and CATEGORY_COLUMN in df.columns:
+        final_cols.append(CATEGORY_COLUMN)
+    # Deduplicate and preserve order, skipping missing columns
     seen = set()
-    final_cols = [c for c in final_cols if not (c in seen or seen.add(c))]
+    final_cols = [c for c in final_cols if c in df.columns and not (c in seen or seen.add(c))]
 
     df = df[final_cols]
-    df = df.rename(columns={CONTENT_COLUMN: "content", SUMMARY_COLUMN: "summary", TITLE_COLUMN: "title", CATEGORY_COLUMN: "category"})
+    rename_map = {CONTENT_COLUMN: "content", SUMMARY_COLUMN: "summary", TITLE_COLUMN: "title"}
+    # Only rename CATEGORY_COLUMN to 'labels' if it is not already 'category'
+    if CATEGORY_COLUMN and CATEGORY_COLUMN != "category" and CATEGORY_COLUMN in df.columns:
+        rename_map[CATEGORY_COLUMN] = "labels"
+    df = df.rename(columns=rename_map)
 
     # Save processed data
     print("\n8. Saving processed data...")

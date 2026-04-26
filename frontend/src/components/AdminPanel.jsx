@@ -1,7 +1,59 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, Plus, Trash2, BarChart3, FileText, Tag } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, BarChart3, FileText, Tag, AlertTriangle, X, CheckCircle } from 'lucide-react'
 import { Button } from './ui/button'
 import { getAdminStats, addArticle, deleteArticle, getAllArticles } from '@/utils/api'
+
+// ─── Custom Dialog Components (replaces window.confirm / window.alert) ─────────
+
+function ConfirmDialog({ message, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100]">
+      <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl border border-[#5C8374]/20">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+            <AlertTriangle className="w-5 h-5 text-red-500" />
+          </div>
+          <p className="text-[#183D3D] font-medium">{message}</p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 px-4 py-2 rounded-lg border border-[#5C8374]/30 text-[#183D3D] font-semibold hover:bg-[#F0F4F3] transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 px-4 py-2 rounded-lg bg-red-500 text-white font-semibold hover:bg-red-600 transition-colors"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Toast({ message, type = 'error', onClose }) {
+  useEffect(() => {
+    const t = setTimeout(onClose, 4000)
+    return () => clearTimeout(t)
+  }, [onClose])
+
+  return (
+    <div className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl text-white font-medium max-w-sm animate-slide-up ${type === 'error' ? 'bg-red-500' : 'bg-[#5C8374]'}`}>
+      {type === 'error'
+        ? <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+        : <CheckCircle className="w-5 h-5 flex-shrink-0" />}
+      <span className="flex-1 text-sm">{message}</span>
+      <button onClick={onClose} className="ml-2 opacity-70 hover:opacity-100">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  )
+}
+
+// ─── AdminPanel ─────────────────────────────────────────────────────────────────
 
 export function AdminPanel({ onBack }) {
   const [stats, setStats] = useState(null)
@@ -15,15 +67,29 @@ export function AdminPanel({ onBack }) {
     category: 'general'
   })
 
-  // when stats load, default category should be first available
+  // Confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState(null) // { articleId }
+
+  // Toast state
+  const [toast, setToast] = useState(null) // { message, type }
+
+  const showToast = (message, type = 'error') => setToast({ message, type })
+  const hideToast = () => setToast(null)
+
+  // ── Ephemeral-writes banner: shown when running on Vercel-like read-only fs ──
+  const [isEphemeral, setIsEphemeral] = useState(false)
+
+  // When stats load, default category to first available
   useEffect(() => {
     if (stats && stats.categories) {
-      const cats = Object.keys(stats.categories);
+      const cats = Object.keys(stats.categories)
       if (cats.length > 0) {
-        setNewArticle(prev => ({ ...prev, category: cats[0] }));
+        setNewArticle(prev => ({ ...prev, category: cats[0] }))
       }
+      // If stats returns a flag or the environment is Vercel, warn
+      if (stats.ephemeral) setIsEphemeral(true)
     }
-  }, [stats]);
+  }, [stats])
 
   useEffect(() => {
     loadData()
@@ -34,12 +100,13 @@ export function AdminPanel({ onBack }) {
     try {
       const [statsData, articlesData] = await Promise.all([
         getAdminStats(),
-        getAllArticles(0) // Get all articles
+        getAllArticles(0)
       ])
       setStats(statsData)
       setArticles(articlesData)
     } catch (error) {
       console.error('Error loading admin data:', error)
+      showToast('Failed to load admin data. Check your connection.')
     }
     setLoading(false)
   }
@@ -50,32 +117,56 @@ export function AdminPanel({ onBack }) {
       await addArticle(newArticle)
       setNewArticle({ title: '', content: '', summary: '', category: 'general' })
       setShowAddForm(false)
-      loadData() // Refresh data
+      showToast('Article added successfully!', 'success')
+      loadData()
     } catch (error) {
-      alert('Error adding article: ' + error.message)
+      showToast('Error adding article: ' + error.message)
     }
   }
 
   const handleDeleteArticle = async (articleId) => {
-    if (!confirm('Are you sure you want to delete this article?')) return
+    // Use custom dialog instead of window.confirm
+    setConfirmDialog({ articleId })
+  }
+
+  const confirmDelete = async () => {
+    const { articleId } = confirmDialog
+    setConfirmDialog(null)
     try {
       await deleteArticle(articleId)
-      loadData() // Refresh data
+      showToast('Article deleted.', 'success')
+      loadData()
     } catch (error) {
-      alert('Error deleting article: ' + error.message)
+      showToast('Error deleting article: ' + error.message)
     }
   }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F0F4F3] flex items-center justify-center">
-        <div className="text-[#183D3D]">Loading admin panel...</div>
+        <div className="text-center">
+          <div className="relative mx-auto mb-4 w-14 h-14">
+            <div className="absolute inset-0 rounded-full border-4 border-[#5C8374]/20" />
+            <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-[#5C8374] animate-spin" />
+          </div>
+          <p className="text-[#183D3D]/70 font-medium">Loading admin panel…</p>
+        </div>
       </div>
     )
   }
 
   return (
     <div className="min-h-screen bg-[#F0F4F3]">
+      {/* Dialogs */}
+      {confirmDialog && (
+        <ConfirmDialog
+          message="Are you sure you want to delete this article? This cannot be undone."
+          onConfirm={confirmDelete}
+          onCancel={() => setConfirmDialog(null)}
+        />
+      )}
+      {toast && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
+
       {/* Header */}
       <header className="sticky top-0 z-50 bg-[#F0F4F3]/80 backdrop-blur-xl border-b border-[#5C8374]/20 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -100,6 +191,16 @@ export function AdminPanel({ onBack }) {
       </header>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Ephemeral-writes warning banner */}
+        {isEphemeral && (
+          <div className="mb-6 flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-500" />
+            <p>
+              <strong>Heads up:</strong> This environment has a read-only filesystem. Articles added or deleted here are held in memory only and will be lost on the next server restart.
+            </p>
+          </div>
+        )}
+
         {/* Stats Cards */}
         {stats && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -174,7 +275,15 @@ export function AdminPanel({ onBack }) {
       {showAddForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
-            <h2 className="text-xl font-bold text-[#183D3D] mb-6">Add New Article</h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-[#183D3D]">Add New Article</h2>
+              <button
+                onClick={() => setShowAddForm(false)}
+                className="p-2 rounded-lg hover:bg-[#F0F4F3] text-[#183D3D]/60 hover:text-[#183D3D] transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
             <form onSubmit={handleAddArticle} className="space-y-4">
               <div>
@@ -210,7 +319,7 @@ export function AdminPanel({ onBack }) {
                 />
               </div>
 
-                      <div>
+              <div>
                 <label className="block text-sm font-medium text-[#183D3D] mb-2">Category</label>
                 <select
                   value={newArticle.category}

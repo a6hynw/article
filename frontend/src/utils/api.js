@@ -1,4 +1,8 @@
-const API_BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:5000'
+// In dev the Vite proxy forwards /api/* → http://localhost:5000
+// In production the frontend is served from the same origin as the backend
+const API_BASE_URL = ''
+// Admin token – set VITE_ADMIN_TOKEN in your .env file
+const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || 'admin123'
 
 // Helper function to create fetch with timeout
 async function fetchWithTimeout(url, options = {}, timeout = 10000) {
@@ -177,7 +181,12 @@ export function shuffleArray(array) {
 // Admin functions
 export async function getAdminStats() {
   try {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/api/admin/stats`)
+    const response = await fetchWithTimeout(`${API_BASE_URL}/api/admin/stats`, {
+      headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` }
+    })
+    if (response.status === 401) {
+      throw new Error('Unauthorized – check VITE_ADMIN_TOKEN')
+    }
     if (!response.ok) {
       throw new Error(`Failed to fetch stats: ${response.status}`)
     }
@@ -192,9 +201,15 @@ export async function addArticle(articleData) {
   try {
     const response = await fetchWithTimeout(`${API_BASE_URL}/api/articles`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${ADMIN_TOKEN}`
+      },
       body: JSON.stringify(articleData)
     })
+    if (response.status === 401) {
+      throw new Error('Unauthorized – check VITE_ADMIN_TOKEN')
+    }
     if (!response.ok) {
       throw new Error(`Failed to add article: ${response.status}`)
     }
@@ -208,8 +223,12 @@ export async function addArticle(articleData) {
 export async function deleteArticle(articleId) {
   try {
     const response = await fetchWithTimeout(`${API_BASE_URL}/api/articles/${articleId}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` }
     })
+    if (response.status === 401) {
+      throw new Error('Unauthorized – check VITE_ADMIN_TOKEN')
+    }
     if (!response.ok) {
       throw new Error(`Failed to delete article: ${response.status}`)
     }

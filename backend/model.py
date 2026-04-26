@@ -1,11 +1,33 @@
+"""
+Dataset exploration / EDA script.
+
+Run from the repo root:
+    python backend/model.py
+
+The script resolves all paths relative to its own location so it works on
+any machine regardless of where the repo was cloned.
+"""
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend — safe on any machine / CI
 import matplotlib.pyplot as plt
+from pathlib import Path
+
+# All paths are relative to this script's location — no hardcoded user paths.
+ROOT_DIR = Path(__file__).resolve().parent
+data_path = ROOT_DIR / "data" / "raw" / "bbc_news_text_complexity_summarization.csv"
 
 # Load the dataset
 print("Loading dataset...")
-df = pd.read_csv(
-    r"C:\Users\TUF\Documents\article\backend\data\raw\bbc_news_text_complexity_summarization.csv"
-)
+print(f"Looking for file at: {data_path}")
+
+if not data_path.exists():
+    raise FileNotFoundError(
+        f"Dataset not found at {data_path}. "
+        "Please ensure the raw data file is placed in backend/data/raw/."
+    )
+
+df = pd.read_csv(data_path)
 
 # Display basic information
 print("\n" + "="*60)

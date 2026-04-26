@@ -1,8 +1,4 @@
-pandas
-numpy
-scikit-learn
-nltk
-flask
-flask-cors
-matplotlib
-seaborn
+flask==3.0.0
+flask-cors==4.0.0
+pandas==2.1.4
+scikit-learn==1.3.2

@@ -20,9 +20,13 @@ export function Header({ interests, onChangeInterests, onRefresh, onSearch, isSe
   useEffect(() => {
     const sync = () => setBookmarkCount(getBookmarkCount())
     window.addEventListener('storage', sync)
-    // Also poll on focus so count updates after navigating back from bookmarks page
     window.addEventListener('focus', sync)
-    return () => { window.removeEventListener('storage', sync); window.removeEventListener('focus', sync) }
+    window.addEventListener('bookmarksUpdated', sync)
+    return () => { 
+      window.removeEventListener('storage', sync)
+      window.removeEventListener('focus', sync)
+      window.removeEventListener('bookmarksUpdated', sync)
+    }
   }, [])
 
   const selectedCategories = interests
@@ -59,9 +63,7 @@ export function Header({ interests, onChangeInterests, onRefresh, onSearch, isSe
               <h1 className="text-xl font-bold text-[#183D3D] leading-tight group-hover:text-[#5C8374] transition-colors duration-300" style={{ fontFamily: 'Georgia, serif' }}>
                 記事 (Kiji)
               </h1>
-              <p className="text-xs text-[#183D3D]/50 font-medium">
-                {selectedCategories.length > 0 ? 'Personalized feed' : 'All articles'}
-              </p>
+              
             </div>
           </div>
 

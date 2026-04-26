@@ -13,10 +13,17 @@ export default function CategoryPage() {
 
   const category = CATEGORIES.find(c => c.id === id)
 
+  // Map URL param to backend category value (handles legacy URLs like /category/sports)
+  const CATEGORY_BACKEND_MAP = {
+    'sports': 'sport',
+    'technology': 'tech',
+  }
+
   useEffect(() => {
     if (!id) { navigate('/'); return }
     setLoading(true)
-    getArticlesByCategory(id, 100)
+    const backendId = CATEGORY_BACKEND_MAP[id] || id
+    getArticlesByCategory(backendId, 100)
       .then(data => { setArticles(data); setLoading(false) })
       .catch(() => setLoading(false))
   }, [id])

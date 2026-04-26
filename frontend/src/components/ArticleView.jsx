@@ -3,39 +3,34 @@ import { ArrowLeft, Calendar, Clock, Share2, Bookmark, BookmarkCheck, Check } fr
 import { Button } from './ui/button'
 import { ArticleCard } from './ArticleCard'
 import { CATEGORIES } from '@/utils/constants'
+import { useBookmarks } from '@/hooks/useBookmarks'
 
-
-// Bookmark helpers (localStorage)
-const BOOKMARKS_KEY = 'article-ai-bookmarks'
-function getBookmarks() {
-  try { return JSON.parse(localStorage.getItem(BOOKMARKS_KEY) || '[]') } catch { return [] }
-}
-function saveBookmarks(ids) {
-  localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(ids))
-}
 
 export function ArticleView({ article, recommendations, recommendationsLoading, onBack, onSelectArticle }) {
+  // Hooks MUST be called before any returns
+  const { isBookmarked, toggleBookmark } = useBookmarks()
+  const [copied, setCopied] = useState(false)
+
+  // Sync bookmark state when article changes
+  const [bookmarked, setBookmarked] = useState(() => {
+    const articleId = article?.article_id || article?.id
+    return articleId ? isBookmarked(articleId) : false
+  })
+
+  useEffect(() => {
+    if (article) {
+      const articleId = article.article_id || article.id
+      setBookmarked(isBookmarked(articleId))
+    }
+  }, [article, isBookmarked])
+
   if (!article) return null
 
   const articleId = article.article_id || article.id
-  const [bookmarked, setBookmarked] = useState(() => getBookmarks().includes(articleId))
-  const [copied, setCopied] = useState(false)
-
-  // Sync bookmark icon when article changes
-  useEffect(() => {
-    setBookmarked(getBookmarks().includes(article.article_id || article.id))
-  }, [article])
 
   const handleBookmark = () => {
-    const id = article.article_id || article.id
-    const saved = getBookmarks()
-    if (saved.includes(id)) {
-      saveBookmarks(saved.filter(b => b !== id))
-      setBookmarked(false)
-    } else {
-      saveBookmarks([...saved, id])
-      setBookmarked(true)
-    }
+    toggleBookmark(articleId)
+    setBookmarked(!bookmarked)
   }
 
   const handleShare = async () => {
@@ -65,7 +60,9 @@ export function ArticleView({ article, recommendations, recommendationsLoading, 
     }
   }
 
-  const category = CATEGORIES.find((c) => c.id === article.category)
+  const CATEGORY_ID_MAP = { 'sports': 'sport', 'technology': 'tech' }
+  const categoryId = CATEGORY_ID_MAP[article.category] || article.category
+  const category = CATEGORIES.find((c) => c.id === categoryId)
 
   const formatDate = (date) => {
     if (!date) return new Date().toLocaleDateString('en-US', {
@@ -85,7 +82,7 @@ export function ArticleView({ article, recommendations, recommendationsLoading, 
   const author = article.author || 'Unknown Author'
   const imageUrl = article.imageUrl || 'https://images.unsplash.com/photo-1504711331062-f86b0b51b552?w=800&h=400&fit=crop'
   const summary = article.summary || ''
-  const readTime = article.readTime || Math.max(1, Math.ceil((content.length || 0) / 200))
+  const readTime = article.readTime || Math.max(1, Math.ceil((content.split(/\s+/).length || 0) / 200))
 
   return (
     <div className="min-h-screen bg-[#F0F4F3]">
@@ -231,9 +228,7 @@ export function ArticleView({ article, recommendations, recommendationsLoading, 
                 </h2>
               </div>
 
-              <p className="text-sm text-[#183D3D]/60 mb-5 leading-relaxed">
-                Based on content similarity using TF-IDF analysis
-              </p>
+              
 
               {/* Loading skeleton */}
               {recommendationsLoading && (

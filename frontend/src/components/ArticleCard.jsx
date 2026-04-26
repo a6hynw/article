@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Clock, ArrowRight, Bookmark, BookmarkCheck } from 'lucide-react'
 import { CATEGORIES } from '@/utils/constants'
+import { useBookmarks } from '@/hooks/useBookmarks'
 
 // Splits `text` on matching `query` and wraps matches in an underlined teal span
 function HighlightedText({ text, query }) {
@@ -19,22 +20,14 @@ function HighlightedText({ text, query }) {
 }
 
 export function ArticleCard({ article, onClick, variant = 'default', highlightQuery = '' }) {
-    // Bookmark state from localStorage
-    const BOOKMARKS_KEY = 'article-ai-bookmarks'
-    const getBookmarks = () => { try { return JSON.parse(localStorage.getItem(BOOKMARKS_KEY) || '[]') } catch { return [] } }
+    // Bookmark state from hook
+    const { isBookmarked, toggleBookmark } = useBookmarks()
     const articleId = article.article_id || article.id
-    const [bookmarked, setBookmarked] = useState(() => getBookmarks().includes(articleId))
+    const bookmarked = isBookmarked(articleId)
 
     const handleBookmark = (e) => {
         e.stopPropagation()
-        const saved = getBookmarks()
-        if (saved.includes(articleId)) {
-            localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(saved.filter(b => b !== articleId)))
-            setBookmarked(false)
-        } else {
-            localStorage.setItem(BOOKMARKS_KEY, JSON.stringify([...saved, articleId]))
-            setBookmarked(true)
-        }
+        toggleBookmark(articleId)
     }
 
     // Get category from categories list or use article.category directly
@@ -50,19 +43,10 @@ export function ArticleCard({ article, onClick, variant = 'default', highlightQu
             'tech': 'laptop',
             'technology': 'laptop',
             'business': 'trending_up',
-            'health': 'favorite',
-            'science': 'science',
             'entertainment': 'movie',
+            'sport': 'emoji_events',
             'sports': 'emoji_events',
-            'politics': 'account_balance',
-            'travel': 'flight',
-            'education': 'school',
-            'food': 'restaurant',
-            'lifestyle': 'nightlife',
-            'finance': 'attach_money',
-            'market': 'bar_chart',
-            'wellness': 'spa',
-            'research': 'biotech'
+            'politics': 'account_balance'
         };
 
         // Check for exact match or partial match
@@ -79,7 +63,7 @@ export function ArticleCard({ article, onClick, variant = 'default', highlightQu
     const title = article.title || 'Untitled Article'
     const excerpt = article.content_preview || article.excerpt || article.content?.substring(0, 150) || 'No preview available'
     const author = article.author || 'Unknown Author'
-    const readTime = article.readTime || Math.ceil((article.content?.length || 0) / 200)
+    const readTime = article.readTime || Math.max(1, Math.ceil((article.content?.split(/\s+/).length || 0) / 200))
 
     if (variant === 'compact') {
         return (
